@@ -1,3 +1,12 @@
+# Local Neo4j installation (deployed by infra/neo4j-local/install.ps1)
+.neo4j/
+
+# Local data (real corpus lives outside git; samples are committed)
+data/local/
+
+# Embedding model cache
+.cache/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
