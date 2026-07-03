@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from typing import Any
 
 from neo4j import Session
@@ -17,15 +18,15 @@ from neo4j import Session
 from ..extract.llm import LLMClient, LLMError
 from .search import attach_doc_entities, hybrid_search
 
-PARSE_PROMPT = """Разбери вопрос к базе знаний горно-металлургического НИИ в JSON-фильтры:
-{
+PARSE_PROMPT_TEMPLATE = """Разбери вопрос к базе знаний горно-металлургического НИИ в JSON-фильтры:
+{{
   "query": "переформулированный поисковый запрос (термины, без вопросительных слов)",
   "year_from": null | int, "year_to": null | int,
   "language": null | "ru" | "en",
   "category": null | "статья" | "обзор" | "доклад" | "журнальная статья" | "материалы конференции",
   "geography": null | "РФ" | "мир"
-}
-Только явные ограничения из вопроса; сомневаешься — null. «за последние N лет» считай от 2026 года.
+}}
+Только явные ограничения из вопроса; сомневаешься — null. «за последние N лет» считай от {current_year} года.
 Ответ — только JSON."""
 
 SYNTH_PROMPT = """Ты — аналитик горно-металлургического НИИ. Ответь на вопрос по фрагментам
@@ -39,9 +40,15 @@ SYNTH_PROMPT = """Ты — аналитик горно-металлургиче�
 Пиши по-русски, компактно."""
 
 
-def parse_question(llm: LLMClient, question: str) -> dict[str, Any]:
+def _parse_prompt(current_year: int | None = None) -> str:
+    return PARSE_PROMPT_TEMPLATE.format(current_year=current_year or date.today().year)
+
+
+def parse_question(
+    llm: LLMClient, question: str, current_year: int | None = None
+) -> dict[str, Any]:
     try:
-        parsed = llm.complete_json(PARSE_PROMPT, question, max_tokens=500)
+        parsed = llm.complete_json(_parse_prompt(current_year), question, max_tokens=500)
     except LLMError:
         return {"query": question}
     return {
@@ -71,10 +78,22 @@ def answer_question(
     question: str,
     llm: LLMClient | None = None,
     k: int = 10,
+    category: str | None = None,
+    language: str | None = None,
+    year_from: int | None = None,
+    year_to: int | None = None,
 ) -> dict[str, Any]:
     filters: dict[str, Any] = {"query": question}
     if llm is not None:
         filters = parse_question(llm, question)
+    if category:
+        filters["category"] = category
+    if language:
+        filters["language"] = language
+    if year_from is not None:
+        filters["year_from"] = year_from
+    if year_to is not None:
+        filters["year_to"] = year_to
 
     hits = hybrid_search(
         session,

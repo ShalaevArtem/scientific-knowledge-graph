@@ -16,7 +16,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 from neo4j import Session
-from pydantic import ValidationError
 
 from ..models import normalize_name
 from ..loaders.base import LoadReport, run_batched

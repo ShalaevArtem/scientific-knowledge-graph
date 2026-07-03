@@ -59,20 +59,40 @@ def health():
 
 
 @app.get("/api/answer")
-def api_answer(q: str, k: int = 10):
+def api_answer(
+    q: str = Query(..., min_length=2, max_length=1000),
+    k: int = Query(10, ge=1, le=20),
+    category: str | None = None,
+    language: str | None = Query(None, pattern="^(ru|en)$"),
+    year_from: int | None = Query(None, ge=1900, le=2100),
+    year_to: int | None = Query(None, ge=1900, le=2100),
+):
+    if year_from is not None and year_to is not None and year_from > year_to:
+        raise HTTPException(400, "год от не может быть больше года до")
     with _session() as s:
-        return answer_question(s, q, llm=llm(), k=k)
+        return answer_question(
+            s,
+            q,
+            llm=llm(),
+            k=k,
+            category=category,
+            language=language,
+            year_from=year_from,
+            year_to=year_to,
+        )
 
 
 @app.get("/api/search")
 def api_search(
-    q: str,
-    k: int = 12,
+    q: str = Query(..., min_length=2, max_length=1000),
+    k: int = Query(12, ge=1, le=30),
     category: str | None = None,
-    language: str | None = None,
-    year_from: int | None = Query(None),
-    year_to: int | None = Query(None),
+    language: str | None = Query(None, pattern="^(ru|en)$"),
+    year_from: int | None = Query(None, ge=1900, le=2100),
+    year_to: int | None = Query(None, ge=1900, le=2100),
 ):
+    if year_from is not None and year_to is not None and year_from > year_to:
+        raise HTTPException(400, "год от не может быть больше года до")
     with _session() as s:
         hits = hybrid_search(
             s, q, k=k, category=category, language=language,
@@ -80,6 +100,24 @@ def api_search(
         )
         attach_doc_entities(s, hits)
     return {"hits": hits}
+
+
+@app.get("/api/review")
+def api_review(limit: int = Query(50, ge=1, le=200)):
+    with _session() as s:
+        rows = s.run(
+            """
+            MATCH (n)
+            WHERE n.needs_review = true
+            RETURN labels(n)[0] AS label, coalesce(n.id, n.name) AS key,
+                   coalesce(n.name, n.grade, n.text, n.id) AS name,
+                   n.confidence AS confidence
+            ORDER BY label, name
+            LIMIT $limit
+            """,
+            limit=limit,
+        ).data()
+    return {"items": rows}
 
 
 @app.get("/api/stats")
