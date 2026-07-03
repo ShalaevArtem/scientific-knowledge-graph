@@ -73,6 +73,11 @@ def _fulltext_escape(query: str) -> str:
     return "".join(out).strip()
 
 
+def _text_signature(text: str) -> str:
+    """Грубая сигнатура для отсечения одинаковых фрагментов из журнальных подшивок."""
+    return re.sub(r"\s+", " ", text).casefold().strip()[:420]
+
+
 def hybrid_search(
     session: Session,
     query: str,
@@ -114,10 +119,15 @@ def hybrid_search(
     by_id = {r["chunk_id"]: r for r in rows}
 
     results = []
+    seen_texts: set[str] = set()
     for cid in ranked_ids:
         row = by_id.get(cid)
         if row is None:  # отфильтрован по метаданным
             continue
+        signature = _text_signature(row.get("text") or "")
+        if signature and signature in seen_texts:
+            continue
+        seen_texts.add(signature)
         row["rrf_score"] = round(scores[cid], 5)
         row["display_title"] = display_title(row)
         results.append(row)
