@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Научный клубок — карта знаний R&D</title>
+<script src="https://unpkg.com/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #171d24; --panel2: #1e2630; --border: #2a3441;
+    --text: #dbe4ee; --muted: #8496a9; --accent: #4da3ff; --accent2: #ffb454;
+    --good: #6dd28c; --warn: #ff7a90;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.55 "Segoe UI", system-ui, sans-serif; }
+  header { padding: 18px 28px 10px; border-bottom: 1px solid var(--border); }
+  header h1 { margin: 0 0 2px; font-size: 20px; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  .searchrow { display: flex; gap: 10px; padding: 16px 28px; }
+  .searchrow input[type=text] { flex: 1; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; font-size: 15px; }
+  .searchrow input:focus { outline: none; border-color: var(--accent); }
+  button { background: var(--accent); color: #06121f; border: 0; border-radius: 10px;
+    padding: 12px 22px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: wait; }
+  .filters { display: flex; gap: 8px; padding: 0 28px 12px; flex-wrap: wrap; }
+  .filters select, .filters input { background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+  nav { display: flex; gap: 4px; padding: 0 28px; border-bottom: 1px solid var(--border); }
+  nav a { padding: 10px 16px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent;
+    text-decoration: none; font-size: 14px; }
+  nav a.active { color: var(--text); border-color: var(--accent); }
+  main { padding: 20px 28px 60px; max-width: 1200px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px; margin-bottom: 14px; }
+  .card h3 { margin: 0 0 6px; font-size: 15px; }
+  .meta { color: var(--muted); font-size: 12.5px; margin-bottom: 8px; }
+  .frag { color: #b8c7d9; font-size: 13.5px; white-space: pre-wrap; }
+  .chips { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
+    padding: 2px 10px; border-radius: 20px; font-size: 12px; cursor: pointer; }
+  .chip:hover { color: var(--text); border-color: var(--accent); }
+  .chip .lbl { color: var(--accent2); margin-right: 4px; }
+  #answerBox { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    border-radius: 12px; padding: 18px 22px; margin-bottom: 18px; white-space: pre-wrap; }
+  #answerBox.empty { color: var(--muted); border-left-color: var(--border); }
+  .cite { color: var(--accent); cursor: pointer; }
+  #cy { height: 560px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+  table.gaps { border-collapse: collapse; font-size: 12px; }
+  table.gaps th, table.gaps td { border: 1px solid var(--border); padding: 4px 6px; text-align: center; }
+  table.gaps th.rowh { text-align: right; white-space: nowrap; }
+  table.gaps th.colh { writing-mode: vertical-rl; transform: rotate(180deg); max-height: 160px;
+    white-space: nowrap; font-weight: 500; }
+  .gap0 { background: #251820; color: var(--warn); }
+  .statgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+  .spin { color: var(--muted); padding: 30px; text-align: center; }
+  .hidden { display: none; }
+  .num { color: var(--accent2); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Научный клубок <span style="color:var(--muted);font-weight:400">· карта знаний R&D</span></h1>
+  <div class="sub">граф знаний + семантический поиск по корпусу: гидрометаллургия, пирометаллургия, обогащение, экология</div>
+</header>
+
+<div class="searchrow">
+  <input id="q" type="text" placeholder="Например: какие технические решения циркуляции католита при электроэкстракции никеля описаны в практике?"
+         onkeydown="if(event.key==='Enter')ask()">
+  <button id="askBtn" onclick="ask()">Спросить</button>
+</div>
+<div class="filters">
+  <select id="fCategory">
+    <option value="">категория: любая</option>
+    <option>статья</option><option>обзор</option><option>доклад</option>
+    <option>журнальная статья</option><option>материалы конференции</option>
+  </select>
+  <select id="fLanguage">
+    <option value="">язык: любой</option><option value="ru">русский</option><option value="en">английский</option>
+  </select>
+  <input id="fYearFrom" type="number" placeholder="год от" style="width:90px">
+  <input id="fYearTo" type="number" placeholder="год до" style="width:90px">
+</div>
+
+<nav>
+  <a id="tab-answer" class="active" onclick="showTab('answer')">Ответ и источники</a>
+  <a id="tab-graph" onclick="showTab('graph')">Граф</a>
+  <a id="tab-gaps" onclick="showTab('gaps')">Пробелы</a>
+  <a id="tab-stats" onclick="showTab('stats')">База</a>
+</nav>
+
+<main>
+  <section id="view-answer">
+    <div id="answerBox" class="empty">Задайте вопрос — система выполнит гибридный поиск по корпусу
+и, при наличии LLM-ключа, соберёт сводку с цитатами. Клик по сущности под фрагментом открывает её окрестность в графе.</div>
+    <div id="exportRow" class="hidden" style="margin-bottom:12px">
+      <button style="padding:8px 14px;font-size:13px" onclick="exportMd()">⬇ Экспорт в Markdown</button>
+    </div>
+    <div id="hits"></div>
+  </section>
+
+  <section id="view-graph" class="hidden">
+    <div class="meta" id="graphTitle">Граф пуст — откройте документ или сущность из результатов поиска.</div>
+    <div id="cy"></div>
+  </section>
+
+  <section id="view-gaps" class="hidden">
+    <div class="meta">Совместные упоминания «материал × процесс» в документах корпуса.
+Красные нули — комбинации без единого документа: кандидаты в пробелы знаний.</div>
+    <div id="gapsBox" class="spin">загрузка…</div>
+  </section>
+
+  <section id="view-stats" class="hidden">
+    <div id="statsBox" class="spin">загрузка…</div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let lastHits = [];
+let lastAnswer = null;
+
+function exportMd() {
+  const q = $('q').value.trim();
+  const lines = [`# ${q}`, '', `*Сформировано: ${new Date().toLocaleString('ru')} · Научный клубок*`, ''];
+  if (lastAnswer) lines.push('## Ответ', '', lastAnswer, '');
+  lines.push('## Источники', '');
+  lastHits.forEach((h, i) => {
+    const src = h.journal || h.conference || h.category;
+    lines.push(`**[${i+1}] ${h.display_title || h.title}** — ${src}${h.year ? ', ' + h.year : ''} (${h.unit_kind} ${h.unit_no}, \`${h.rel_path}\`)`, '', '> ' + h.text.slice(0, 500).replace(/\n/g, ' '), '');
+  });
+  const blob = new Blob([lines.join('\n')], {type: 'text/markdown;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'answer.md';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function showTab(name) {
+  for (const t of ['answer','graph','gaps','stats']) {
+    $('view-'+t).classList.toggle('hidden', t !== name);
+    $('tab-'+t).classList.toggle('active', t === name);
+  }
+  if (name === 'gaps') loadGaps();
+  if (name === 'stats') loadStats();
+}
+
+function esc(s) { return (s ?? '').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function ask() {
+  const q = $('q').value.trim();
+  if (!q) return;
+  $('askBtn').disabled = true;
+  $('answerBox').className = '';
+  $('answerBox').textContent = 'ищу и синтезирую…';
+  $('hits').innerHTML = '';
+  try {
+    const params = new URLSearchParams({q});
+    const r = await fetch('/api/answer?' + params);
+    const data = await r.json();
+    lastHits = data.citations || [];
+    lastAnswer = data.answer || null;
+    renderAnswer(data);
+    renderHits(lastHits);
+    $('exportRow').classList.toggle('hidden', lastHits.length === 0);
+  } catch (e) {
+    $('answerBox').textContent = 'Ошибка: ' + e;
+  } finally {
+    $('askBtn').disabled = false;
+  }
+}
+
+function renderAnswer(data) {
+  const box = $('answerBox');
+  if (data.answer) {
+    box.className = '';
+    box.innerHTML = esc(data.answer).replace(/\[(\d+)\]/g,
+      (m, n) => `<span class="cite" onclick="scrollToHit(${n})">[${n}]</span>`);
+  } else {
+    box.className = 'empty';
+    box.textContent = data.citations?.length
+      ? 'LLM-ключ не задан — показаны найденные фрагменты без сводки (задайте LLM_API_KEY в .env).'
+      : 'Ничего не найдено. Убедитесь, что корпус загружен (skg ingest) и посчитаны эмбеддинги (skg embed).';
+  }
+  if (data.filters && Object.keys(data.filters).length > 1) {
+    box.innerHTML += `<div class="meta" style="margin-top:10px">распознанные фильтры: ${esc(JSON.stringify(data.filters))}</div>`;
+  }
+}
+
+function renderHits(hits) {
+  $('hits').innerHTML = hits.map((h, i) => `
+    <div class="card" id="hit${i+1}">
+      <h3>[${i+1}] ${esc(h.display_title || h.title)}</h3>
+      <div class="meta">${esc(h.category)}${h.journal ? ' · ' + esc(h.journal) : ''}${h.conference ? ' · ' + esc(h.conference) : ''}
+        ${h.year ? ' · <span class="num">' + h.year + '</span>' : ''} · ${esc(h.language || '')}
+        · ${esc(h.unit_kind)} ${h.unit_no} · rrf ${h.rrf_score}
+        · <a class="cite" onclick="openDocGraph('${h.doc_id}', '${esc(h.title).replace(/'/g, "\\'")}')">граф →</a>
+        · <a class="cite" onclick="toggleContext(this, '${h.chunk_id}')">контекст ↓</a></div>
+      <div class="frag">${esc(h.text.length > 700 ? h.text.slice(0, 700) + '…' : h.text)}</div>
+      <div class="context hidden"></div>
+      <div class="chips">${(h.entities || []).map(e =>
+        `<span class="chip" onclick="openEntityGraph('${e.label}','${esc(e.name).replace(/'/g, "\\'")}')">
+          <span class="lbl">${e.label[0]}</span>${esc(e.name)}</span>`).join('')}</div>
+    </div>`).join('');
+}
+
+async function toggleContext(link, chunkId) {
+  const box = link.closest('.card').querySelector('.context');
+  if (!box.classList.contains('hidden')) { box.classList.add('hidden'); link.textContent = 'контекст ↓'; return; }
+  if (!box.dataset.loaded) {
+    const r = await fetch('/api/context?chunk_id=' + encodeURIComponent(chunkId));
+    if (!r.ok) return;
+    const data = await r.json();
+    box.innerHTML = data.chunks.map(c =>
+      `<div class="frag" style="margin-top:8px;${data.focus.endsWith(':' + c.seq) ? 'border-left:2px solid var(--accent);padding-left:8px' : 'opacity:.75'}">
+        <span class="meta">${esc(c.unit_kind)} ${c.unit_no}:</span> ${esc(c.text)}</div>`).join('');
+    box.dataset.loaded = '1';
+  }
+  box.classList.remove('hidden');
+  link.textContent = 'контекст ↑';
+}
+
+function scrollToHit(n) {
+  const el = $('hit' + n);
+  if (el) { el.scrollIntoView({behavior: 'smooth', block: 'center'});
+    el.style.borderColor = 'var(--accent)'; setTimeout(() => el.style.borderColor = '', 1600); }
+}
+
+const CY_COLORS = {Document: '#4da3ff', Material: '#6dd28c', Process: '#ffb454',
+  Equipment: '#c792ea', Facility: '#ff7a90', Conclusion: '#f7e967', Person: '#89ddff'};
+
+function drawGraph(data, title) {
+  showTab('graph');
+  $('graphTitle').textContent = title;
+  const elements = [
+    ...data.nodes.map(n => ({data: {id: n.id, label: n.name?.slice(0, 40), type: n.label}})),
+    ...data.edges.map((e, i) => ({data: {id: 'e'+i, source: e.from, target: e.to, w: e.weight || 1}})),
+  ];
+  cytoscape({
+    container: $('cy'), elements,
+    style: [
+      {selector: 'node', style: {
+        label: 'data(label)', color: '#dbe4ee', 'font-size': 10,
+        'background-color': ele => CY_COLORS[ele.data('type')] || '#8496a9',
+        width: 22, height: 22, 'text-wrap': 'ellipsis', 'text-max-width': 120,
+      }},
+      {selector: 'node[type="Document"]', style: {shape: 'round-rectangle', width: 30, height: 22}},
+      {selector: 'edge', style: {width: 'mapData(w, 1, 10, 1, 5)', 'line-color': '#2a3441',
+        'curve-style': 'bezier'}},
+    ],
+    layout: {name: 'cose', animate: false, nodeRepulsion: 9000},
+  });
+}
+
+async function openDocGraph(docId, title) {
+  const r = await fetch('/api/graph?doc_id=' + encodeURIComponent(docId));
+  drawGraph(await r.json(), 'Окрестность документа: ' + title);
+}
+async function openEntityGraph(label, name) {
+  const key = {M: 'M:', P: 'P:', E: 'E:'}[label[0]] !== undefined && label !== 'Facility'
+    ? label[0] + ':' + name.toLowerCase().replace(/[\s\-_/]+/g, '') : name;
+  const r = await fetch(`/api/graph?label=${label}&key=${encodeURIComponent(key)}`);
+  if (!r.ok) { alert('не удалось построить окрестность'); return; }
+  drawGraph(await r.json(), `${label}: ${name} — документы и со-упоминания`);
+}
+
+async function loadGaps() {
+  const r = await fetch('/api/gaps');
+  const {processes, matrix} = await r.json();
+  if (!matrix.length) { $('gapsBox').textContent = 'нет данных — прогоните skg extract'; return; }
+  let html = '<table class="gaps"><tr><th></th>' +
+    processes.map(p => `<th class="colh">${esc(p)}</th>`).join('') + '</tr>';
+  for (const row of matrix) {
+    html += `<tr><th class="rowh">${esc(row.material)}</th>` +
+      row.cells.map(v => `<td class="${v === 0 ? 'gap0' : ''}">${v || 0}</td>`).join('') + '</tr>';
+  }
+  $('gapsBox').innerHTML = html + '</table>';
+}
+
+async function loadStats() {
+  const r = await fetch('/api/stats');
+  const s = await r.json();
+  const block = (title, rows, f) => `<div class="card"><h3>${title}</h3>` +
+    rows.map(f).join('') + '</div>';
+  $('statsBox').innerHTML = '<div class="statgrid">' +
+    block('Документы по категориям', s.documents, d =>
+      `<div>${esc(d.category)} — <span class="num">${d.n}</span> <span class="meta">(${d.year_min ?? '—'}–${d.year_max ?? '—'})</span></div>`) +
+    block('Узлы графа', s.nodes, n => `<div>${esc(n.label)} — <span class="num">${n.n}</span></div>`) +
+    block('Связи', s.relations, x => `<div>${esc(x.type)} — <span class="num">${x.n}</span></div>`) +
+    block('Очередь на проверку эксперта', s.needs_review.length ? s.needs_review : [{label: '—', n: 0}],
+      x => `<div>${esc(x.label)} — <span class="num">${x.n}</span></div>`) +
+    '</div>';
+}
+</script>
+</body>
+</html>
