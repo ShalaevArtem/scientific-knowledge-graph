@@ -1,119 +1,405 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Научный клубок — карта знаний R&D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
 <style>
-  :root {
-    --bg: #0f1419; --panel: #171d24; --panel2: #1e2630; --border: #2a3441;
-    --text: #dbe4ee; --muted: #8496a9; --accent: #4da3ff; --accent2: #ffb454;
-    --good: #6dd28c; --warn: #ff7a90;
+  :root, [data-theme="dark"] {
+    --bg: #0b0f14;
+    --bg-glow-1: rgba(77, 143, 255, .13);
+    --bg-glow-2: rgba(160, 96, 255, .09);
+    --panel: rgba(23, 30, 40, .72);
+    --panel-solid: #161d26;
+    --panel2: #1d2733;
+    --border: #263140;
+    --border-soft: rgba(120, 150, 190, .14);
+    --text: #e7edf5;
+    --muted: #8b9bb0;
+    --faint: #5d6b7e;
+    --accent: #5aa7ff;
+    --accent-deep: #2f7fe0;
+    --accent2: #ffb454;
+    --violet: #b48cff;
+    --good: #5fd68b;
+    --warn: #ff7a90;
+    --gold: #f4d35e;
+    --cyan: #7adcff;
+    --chip-bg: rgba(90, 167, 255, .08);
+    --shadow: 0 10px 32px rgba(0, 0, 0, .42);
+    --shadow-sm: 0 4px 14px rgba(0, 0, 0, .28);
+    --heat-hi: 47, 127, 224;
   }
+  [data-theme="light"] {
+    --bg: #f3f5f9;
+    --bg-glow-1: rgba(77, 143, 255, .12);
+    --bg-glow-2: rgba(160, 96, 255, .08);
+    --panel: rgba(255, 255, 255, .82);
+    --panel-solid: #ffffff;
+    --panel2: #eef2f8;
+    --border: #d8e0ea;
+    --border-soft: rgba(60, 90, 140, .16);
+    --text: #1a2433;
+    --muted: #5b6b80;
+    --faint: #9aa8ba;
+    --accent: #2f7fe0;
+    --accent-deep: #1f66c0;
+    --accent2: #d98a1f;
+    --violet: #7d55d4;
+    --good: #1f9e57;
+    --warn: #d94f6a;
+    --gold: #b8912a;
+    --cyan: #1993c4;
+    --chip-bg: rgba(47, 127, 224, .07);
+    --shadow: 0 10px 32px rgba(30, 50, 90, .13);
+    --shadow-sm: 0 4px 14px rgba(30, 50, 90, .09);
+  }
+
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-         font: 15px/1.55 "Segoe UI", system-ui, sans-serif; }
-  header { padding: 18px 28px 10px; border-bottom: 1px solid var(--border); }
-  header h1 { margin: 0 0 2px; font-size: 20px; font-weight: 600; }
-  header .sub { color: var(--muted); font-size: 13px; }
-  .searchrow { display: flex; gap: 10px; padding: 16px 28px; }
-  .searchrow input[type=text] { flex: 1; background: var(--panel); color: var(--text);
-    border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; font-size: 15px; }
-  .searchrow input:focus { outline: none; border-color: var(--accent); }
-  button { background: var(--accent); color: #06121f; border: 0; border-radius: 10px;
-    padding: 12px 22px; font-size: 15px; font-weight: 600; cursor: pointer; }
-  button:disabled { opacity: .5; cursor: wait; }
-  .filters { display: flex; gap: 8px; padding: 0 28px 12px; flex-wrap: wrap; }
-  .filters select, .filters input { background: var(--panel); color: var(--text);
-    border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
-  .demos { display: flex; gap: 8px; padding: 0 28px 14px; flex-wrap: wrap; }
-  .demo { background: var(--panel2); border: 1px solid var(--border); color: var(--text);
-    padding: 7px 10px; border-radius: 8px; font-size: 12.5px; cursor: pointer; }
-  .demo:hover { border-color: var(--accent); }
-  nav { display: flex; gap: 4px; padding: 0 28px; border-bottom: 1px solid var(--border); }
-  nav a { padding: 10px 16px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent;
-    text-decoration: none; font-size: 14px; }
-  nav a.active { color: var(--text); border-color: var(--accent); }
-  main { padding: 20px 28px 60px; max-width: 1200px; }
-  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-    padding: 16px 18px; margin-bottom: 14px; }
-  .card h3 { margin: 0 0 6px; font-size: 15px; }
-  .meta { color: var(--muted); font-size: 12.5px; margin-bottom: 8px; }
-  .frag { color: #b8c7d9; font-size: 13.5px; white-space: pre-wrap; }
-  .chips { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip { background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
-    padding: 2px 10px; border-radius: 20px; font-size: 12px; cursor: pointer; }
-  .chip:hover { color: var(--text); border-color: var(--accent); }
-  .chip .lbl { color: var(--accent2); margin-right: 4px; }
-  #answerBox { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--accent);
-    border-radius: 12px; padding: 18px 22px; margin-bottom: 18px; white-space: pre-wrap; }
-  #answerBox.empty { color: var(--muted); border-left-color: var(--border); }
-  .cite { color: var(--accent); cursor: pointer; }
-  #cy { height: 560px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
-  table.gaps { border-collapse: collapse; font-size: 12px; }
-  table.gaps th, table.gaps td { border: 1px solid var(--border); padding: 4px 6px; text-align: center; }
-  table.gaps th.rowh { text-align: right; white-space: nowrap; }
-  table.gaps th.colh { writing-mode: vertical-rl; transform: rotate(180deg); max-height: 160px;
-    white-space: nowrap; font-weight: 500; }
-  .gap0 { background: #251820; color: var(--warn); }
-  .statgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
-  .reviewitem { display: grid; grid-template-columns: 110px 1fr 80px; gap: 10px; align-items: baseline; }
-  .spin { color: var(--muted); padding: 30px; text-align: center; }
-  .hidden { display: none; }
-  .num { color: var(--accent2); }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.6 "Inter", "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    transition: background .3s, color .3s;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(900px 500px at 12% -8%, var(--bg-glow-1), transparent 60%),
+      radial-gradient(800px 460px at 88% -12%, var(--bg-glow-2), transparent 60%);
+  }
+  ::selection { background: rgba(90, 167, 255, .3); }
+  .mono { font-family: "JetBrains Mono", Consolas, monospace; }
+
+  .shell { max-width: 1220px; margin: 0 auto; padding: 0 28px; }
+
+  /* ---------- шапка ---------- */
+  header { padding: 26px 0 6px; }
+  .toprow { display: flex; align-items: flex-start; gap: 18px; }
+  .logo {
+    flex: none; width: 52px; height: 52px; border-radius: 15px; display: grid; place-items: center;
+    background: linear-gradient(140deg, var(--accent-deep), var(--violet));
+    box-shadow: 0 6px 22px rgba(90, 130, 255, .35);
+  }
+  .logo svg { width: 32px; height: 32px; }
+  .titleblock { flex: 1; min-width: 0; }
+  h1 { margin: 0; font-size: 23px; font-weight: 800; letter-spacing: -.02em; }
+  h1 .thin { font-weight: 500; color: var(--muted); }
+  .sub { color: var(--muted); font-size: 13.5px; margin-top: 3px; }
+  .sub b { color: var(--text); font-weight: 600; }
+
+  .authbox { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+  .authrow { display: flex; gap: 8px; align-items: center; }
+  .authbox input {
+    width: 168px; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 9px; padding: 7px 11px; font-size: 12.5px;
+    font-family: inherit; transition: border-color .2s;
+  }
+  .authbox input:focus { outline: none; border-color: var(--accent); }
+  #whoami { font-size: 12px; color: var(--muted); }
+  #whoami .role { color: var(--accent); font-weight: 600; }
+  .iconbtn {
+    background: var(--panel); border: 1px solid var(--border); color: var(--muted);
+    width: 34px; height: 34px; border-radius: 9px; cursor: pointer; font-size: 15px;
+    display: grid; place-items: center; padding: 0; transition: color .2s, border-color .2s, transform .15s;
+  }
+  .iconbtn:hover { color: var(--text); border-color: var(--accent); transform: translateY(-1px); }
+
+  /* ---------- поиск ---------- */
+  .searchwrap { margin: 22px 0 0; position: relative; }
+  .searchrow {
+    display: flex; gap: 10px; padding: 8px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    backdrop-filter: blur(12px); box-shadow: var(--shadow-sm);
+    transition: border-color .25s, box-shadow .25s;
+  }
+  .searchrow:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px rgba(90, 167, 255, .13), var(--shadow-sm);
+  }
+  .searchrow .qicon { flex: none; align-self: center; margin-left: 10px; color: var(--faint); }
+  .searchrow input[type=text] {
+    flex: 1; min-width: 0; background: transparent; color: var(--text); border: 0;
+    padding: 10px 6px; font-size: 15.5px; font-family: inherit;
+  }
+  .searchrow input::placeholder { color: var(--faint); }
+  .searchrow input:focus { outline: none; }
+  .btn {
+    background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+    color: #fff; border: 0; border-radius: 11px;
+    padding: 12px 26px; font-size: 15px; font-weight: 700; font-family: inherit; cursor: pointer;
+    box-shadow: 0 4px 16px rgba(70, 130, 230, .35);
+    transition: transform .15s, box-shadow .2s, filter .2s;
+  }
+  .btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.08); }
+  .btn:active:not(:disabled) { transform: translateY(0); }
+  .btn:disabled { opacity: .55; cursor: wait; box-shadow: none; }
+  .btn.small { padding: 8px 16px; font-size: 13px; border-radius: 9px; }
+  .btn.ghost {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border); box-shadow: none;
+  }
+  .btn.ghost:hover:not(:disabled) { border-color: var(--accent); filter: none; }
+
+  .filters { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+  .filters .flabel { color: var(--faint); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; margin-right: 2px; }
+  .filters select, .filters input {
+    background: var(--panel); color: var(--text); font-family: inherit;
+    border: 1px solid var(--border); border-radius: 9px; padding: 7px 11px; font-size: 13px;
+    transition: border-color .2s;
+  }
+  .filters select:focus, .filters input:focus { outline: none; border-color: var(--accent); }
+  .filters select:not([data-empty="1"]), .filters input:not(:placeholder-shown) { border-color: var(--accent); color: var(--accent); }
+
+  .demos { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+  .demos .dlabel { color: var(--faint); font-size: 12.5px; margin-right: 2px; }
+  .demo {
+    background: var(--chip-bg); border: 1px solid var(--border-soft); color: var(--muted);
+    padding: 7px 14px; border-radius: 999px; font-size: 12.5px; cursor: pointer;
+    transition: all .18s;
+  }
+  .demo:hover { border-color: var(--accent); color: var(--text); transform: translateY(-1px); }
+
+  /* ---------- вкладки ---------- */
+  nav {
+    display: flex; gap: 2px; margin-top: 24px; overflow-x: auto;
+    border-bottom: 1px solid var(--border);
+  }
+  nav a {
+    padding: 11px 18px; color: var(--muted); cursor: pointer; white-space: nowrap;
+    text-decoration: none; font-size: 14px; font-weight: 500; position: relative;
+    display: flex; align-items: center; gap: 7px;
+    transition: color .2s;
+  }
+  nav a:hover { color: var(--text); }
+  nav a.active { color: var(--text); font-weight: 600; }
+  nav a.active::after {
+    content: ""; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 2.5px;
+    border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--violet));
+  }
+  nav a .ticon { opacity: .75; font-size: 13px; }
+
+  main { padding: 24px 0 80px; }
+
+  /* ---------- карточки ---------- */
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 15px;
+    padding: 18px 22px; margin-bottom: 14px; backdrop-filter: blur(10px);
+    animation: rise .35s ease both;
+    transition: border-color .2s, transform .2s, box-shadow .2s;
+  }
+  .hitcard:hover { border-color: var(--border-soft); transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .card h3 { margin: 0 0 6px; font-size: 15.5px; font-weight: 600; letter-spacing: -.01em; }
+  .card h3 .n { color: var(--accent); font-weight: 700; margin-right: 6px; font-family: "JetBrains Mono", monospace; font-size: 13px; }
+  .meta { color: var(--muted); font-size: 12.5px; margin-bottom: 8px; line-height: 1.7; }
+  .frag { color: var(--text); opacity: .88; font-size: 13.5px; white-space: pre-wrap; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px; padding: 1px 9px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; vertical-align: 1px;
+  }
+  .badge.graph { background: rgba(95, 214, 139, .12); color: var(--good); border: 1px solid rgba(95, 214, 139, .3); }
+  .badge.measure { background: rgba(255, 180, 84, .12); color: var(--accent2); border: 1px solid rgba(255, 180, 84, .3); }
+  .badge.cat { background: var(--chip-bg); color: var(--muted); border: 1px solid var(--border-soft); }
+
+  .chips { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--chip-bg); border: 1px solid var(--border-soft); color: var(--muted);
+    padding: 3px 12px 3px 5px; border-radius: 999px; font-size: 12px; cursor: pointer;
+    transition: all .18s;
+  }
+  .chip:hover { color: var(--text); border-color: var(--accent); transform: translateY(-1px); }
+  .chip .lbl {
+    width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 10px; font-weight: 700; color: #0b0f14; flex: none;
+  }
+  .chip.static { cursor: default; padding-left: 12px; }
+  .chip.static:hover { transform: none; border-color: var(--border-soft); }
+  .chip .cnt { color: var(--accent); font-weight: 700; font-family: "JetBrains Mono", monospace; font-size: 11px; }
+
+  /* ---------- ответ ---------- */
+  #answerBox {
+    position: relative;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 15px;
+    padding: 20px 24px 20px 28px; margin-bottom: 18px; white-space: pre-wrap;
+    backdrop-filter: blur(10px); animation: rise .35s ease both;
+    font-size: 14.5px;
+  }
+  #answerBox::before {
+    content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3.5px;
+    border-radius: 4px; background: linear-gradient(180deg, var(--accent), var(--violet));
+    transition: opacity .3s;
+  }
+  #answerBox.empty { color: var(--muted); }
+  #answerBox.empty::before { opacity: .25; }
+  .cite {
+    color: var(--accent); cursor: pointer; font-weight: 600;
+    border-bottom: 1px dashed transparent; transition: border-color .15s;
+  }
+  .cite:hover { border-bottom-color: var(--accent); }
+
+  /* skeleton-загрузка */
+  .skel { border-radius: 8px; height: 14px; margin: 10px 0; position: relative; overflow: hidden; background: var(--panel2); }
+  .skel::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(140, 170, 210, .14), transparent);
+    animation: shimmer 1.3s infinite;
+  }
+  @keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+  .thinking { display: flex; align-items: center; gap: 12px; color: var(--muted); }
+  .orbit { width: 20px; height: 20px; border-radius: 50%; flex: none;
+    border: 2.5px solid var(--border); border-top-color: var(--accent);
+    animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- граф ---------- */
+  #cy {
+    height: 580px; border-radius: 15px;
+    background: var(--panel-solid);
+    background-image: radial-gradient(var(--border-soft) 1px, transparent 1px);
+    background-size: 26px 26px;
+    border: 1px solid var(--border);
+  }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 12px 2px 0; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+  .legend i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+
+  /* ---------- пробелы (heatmap) ---------- */
+  .gapscroll { overflow-x: auto; padding-bottom: 8px; }
+  table.gaps { border-collapse: separate; border-spacing: 2.5px; font-size: 11.5px; }
+  table.gaps td {
+    min-width: 32px; height: 28px; text-align: center; border-radius: 6px;
+    font-family: "JetBrains Mono", monospace; font-weight: 600;
+    transition: transform .12s;
+  }
+  table.gaps td:hover { transform: scale(1.18); }
+  table.gaps th { color: var(--muted); font-weight: 500; padding: 3px 7px; }
+  table.gaps th.rowh { text-align: right; white-space: nowrap; font-size: 12px; }
+  table.gaps th.colh {
+    writing-mode: vertical-rl; transform: rotate(180deg); max-height: 170px;
+    white-space: nowrap; vertical-align: bottom;
+  }
+  .gap0 { background: rgba(255, 122, 144, .13); color: var(--warn); box-shadow: inset 0 0 0 1px rgba(255, 122, 144, .35); }
+
+  /* ---------- статистика ---------- */
+  .statgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+  .statgrid .card { margin: 0; }
+  .statgrid h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-weight: 600; margin-bottom: 12px; }
+  .statrow { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; gap: 10px; border-bottom: 1px dashed var(--border-soft); }
+  .statrow:last-child { border-bottom: 0; }
+  .statrow .name { font-size: 13px; }
+  .statrow .val { font-family: "JetBrains Mono", monospace; font-weight: 600; color: var(--accent); }
+  .statrow .rng { color: var(--faint); font-size: 11px; margin-left: 6px; font-weight: 400; }
+
+  /* ---------- проверка / аудит ---------- */
+  .reviewitem {
+    display: grid; grid-template-columns: 130px 1fr 90px; gap: 12px; align-items: center;
+    padding: 8px 4px; border-bottom: 1px dashed var(--border-soft);
+  }
+  .reviewitem:last-child { border-bottom: 0; }
+  .conf { font-family: "JetBrains Mono", monospace; font-size: 11.5px; text-align: right; }
+  .conf.hi { color: var(--good); } .conf.mid { color: var(--accent2); } .conf.lo { color: var(--warn); }
+
+  .empty-state { text-align: center; color: var(--muted); padding: 56px 20px; }
+  .empty-state .glyph { font-size: 38px; margin-bottom: 10px; opacity: .5; }
+  .hidden { display: none !important; }
+  .num { color: var(--accent2); font-family: "JetBrains Mono", monospace; }
+
+  footer { color: var(--faint); font-size: 12px; text-align: center; padding: 0 0 26px; }
+
+  @media (max-width: 760px) {
+    .shell { padding: 0 16px; }
+    .toprow { flex-wrap: wrap; }
+    .authbox { align-items: flex-start; }
+    .reviewitem { grid-template-columns: 90px 1fr 70px; }
+    #cy { height: 420px; }
+  }
 </style>
 </head>
 <body>
-<header style="position:relative">
-  <h1>Научный клубок <span style="color:var(--muted);font-weight:400">· карта знаний R&D</span></h1>
-  <div class="sub">граф знаний + семантический поиск по корпусу: гидрометаллургия, пирометаллургия, обогащение, экология</div>
-  <div style="position:absolute;top:14px;right:20px;text-align:right">
-    <input id="authToken" type="password" placeholder="токен доступа"
-           style="width:150px;padding:4px 8px;font-size:12px" onchange="setToken(this.value)">
-    <div id="whoami" class="meta" style="margin-top:4px"></div>
+<div class="shell">
+
+<header>
+  <div class="toprow">
+    <div class="logo" title="Научный клубок">
+      <!-- клубок нитей -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round">
+        <circle cx="12" cy="12" r="8.2"/>
+        <path d="M4.4 9.5c4.5-1 10.5-1 15.2.6"/>
+        <path d="M4.1 13.8c4.8-1.4 11-1 15.6.4"/>
+        <path d="M8.5 4.6c2.5 4.2 3.2 10.2 1.6 14.8"/>
+        <path d="M14.9 4.9c1.8 4.4 1.6 10-.4 14.2"/>
+        <path d="M20.2 12l2.6 2.2"/>
+      </svg>
+    </div>
+    <div class="titleblock">
+      <h1>Научный клубок <span class="thin">· карта знаний R&amp;D</span></h1>
+      <div class="sub">граф знаний + гибридный поиск: <b>гидрометаллургия</b> · <b>пирометаллургия</b> · <b>обогащение</b> · <b>экология</b></div>
+    </div>
+    <div class="authbox">
+      <div class="authrow">
+        <button class="iconbtn" id="themeBtn" title="Переключить тему" onclick="toggleTheme()">◐</button>
+        <input id="authToken" type="password" placeholder="токен доступа" onchange="setToken(this.value)">
+      </div>
+      <div id="whoami"></div>
+    </div>
   </div>
+
+  <div class="searchwrap">
+    <div class="searchrow">
+      <svg class="qicon" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/>
+      </svg>
+      <input id="q" type="text" placeholder="Например: какие технические решения циркуляции католита при электроэкстракции никеля описаны в практике?"
+             onkeydown="if(event.key==='Enter')ask()">
+      <button id="askBtn" class="btn" onclick="ask()">Спросить</button>
+    </div>
+    <div class="filters">
+      <span class="flabel">Фильтры</span>
+      <select id="fCategory" data-empty="1" onchange="this.dataset.empty = this.value ? '' : '1'">
+        <option value="">категория: любая</option>
+        <option>статья</option><option>обзор</option><option>доклад</option>
+        <option>журнальная статья</option><option>материалы конференции</option>
+      </select>
+      <select id="fLanguage" data-empty="1" onchange="this.dataset.empty = this.value ? '' : '1'">
+        <option value="">язык: любой</option><option value="ru">русский</option><option value="en">английский</option>
+      </select>
+      <input id="fYearFrom" type="number" placeholder="год от" style="width:92px">
+      <input id="fYearTo" type="number" placeholder="год до" style="width:92px">
+    </div>
+    <div class="demos">
+      <span class="dlabel">Попробуйте:</span>
+      <span class="demo" onclick="demoAsk('Какие методы обессоливания воды подходят для обогатительной фабрики при сульфатах и хлоридах 200-300 мг/л?')">💧 обессоливание воды</span>
+      <span class="demo" onclick="demoAsk('Какие технические решения организации циркуляции католита при электроэкстракции никеля описаны в мировой практике, какая скорость потока оптимальна?')">⚡ циркуляция католита</span>
+      <span class="demo" onclick="demoAsk('Покажите эксперименты и публикации по распределению Au, Ag и МПГ между штейном и шлаком за последние 5 лет.')">🥇 Au, Ag и МПГ</span>
+      <span class="demo" onclick="demoAsk('Какие способы закачки шахтных вод в глубокие горизонты применялись в России и за рубежом, каковы ТЭП?')">⛏️ шахтные воды</span>
+    </div>
+  </div>
+
+  <nav>
+    <a id="tab-answer" class="active" onclick="showTab('answer')"><span class="ticon">💬</span>Ответ и источники</a>
+    <a id="tab-graph" onclick="showTab('graph')"><span class="ticon">🕸️</span>Граф</a>
+    <a id="tab-gaps" onclick="showTab('gaps')"><span class="ticon">🧩</span>Пробелы</a>
+    <a id="tab-review" onclick="showTab('review')"><span class="ticon">✅</span>Проверка</a>
+    <a id="tab-stats" onclick="showTab('stats')"><span class="ticon">📊</span>База</a>
+    <a id="tab-audit" onclick="showTab('audit')" style="display:none"><span class="ticon">🛡️</span>Аудит</a>
+  </nav>
 </header>
-
-<div class="searchrow">
-  <input id="q" type="text" placeholder="Например: какие технические решения циркуляции католита при электроэкстракции никеля описаны в практике?"
-         onkeydown="if(event.key==='Enter')ask()">
-  <button id="askBtn" onclick="ask()">Спросить</button>
-</div>
-<div class="filters">
-  <select id="fCategory">
-    <option value="">категория: любая</option>
-    <option>статья</option><option>обзор</option><option>доклад</option>
-    <option>журнальная статья</option><option>материалы конференции</option>
-  </select>
-  <select id="fLanguage">
-    <option value="">язык: любой</option><option value="ru">русский</option><option value="en">английский</option>
-  </select>
-  <input id="fYearFrom" type="number" placeholder="год от" style="width:90px">
-  <input id="fYearTo" type="number" placeholder="год до" style="width:90px">
-</div>
-<div class="demos">
-  <span class="demo" onclick="demoAsk('Какие методы обессоливания воды подходят для обогатительной фабрики при сульфатах и хлоридах 200-300 мг/л?')">обессоливание воды</span>
-  <span class="demo" onclick="demoAsk('Какие технические решения организации циркуляции католита при электроэкстракции никеля описаны в мировой практике, какая скорость потока оптимальна?')">циркуляция католита</span>
-  <span class="demo" onclick="demoAsk('Покажите эксперименты и публикации по распределению Au, Ag и МПГ между штейном и шлаком за последние 5 лет.')">Au, Ag и МПГ</span>
-  <span class="demo" onclick="demoAsk('Какие способы закачки шахтных вод в глубокие горизонты применялись в России и за рубежом, каковы ТЭП?')">шахтные воды</span>
-</div>
-
-<nav>
-  <a id="tab-answer" class="active" onclick="showTab('answer')">Ответ и источники</a>
-  <a id="tab-graph" onclick="showTab('graph')">Граф</a>
-  <a id="tab-gaps" onclick="showTab('gaps')">Пробелы</a>
-  <a id="tab-review" onclick="showTab('review')">Проверка</a>
-  <a id="tab-stats" onclick="showTab('stats')">База</a>
-  <a id="tab-audit" onclick="showTab('audit')" style="display:none">Аудит</a>
-</nav>
 
 <main>
   <section id="view-answer">
     <div id="answerBox" class="empty">Задайте вопрос — система выполнит гибридный поиск по корпусу
 и, при наличии LLM-ключа, соберёт сводку с цитатами. Клик по сущности под фрагментом открывает её окрестность в графе.</div>
-    <div id="exportRow" class="hidden" style="margin-bottom:12px">
-      <button style="padding:8px 14px;font-size:13px" onclick="exportMd()">⬇ Экспорт в Markdown</button>
+    <div id="exportRow" class="hidden" style="margin-bottom:14px">
+      <button class="btn ghost small" onclick="exportMd()">⬇ Экспорт в Markdown</button>
     </div>
     <div id="expertsBox" class="hidden" style="margin-bottom:14px"></div>
     <div id="hits"></div>
@@ -122,35 +408,48 @@
   <section id="view-graph" class="hidden">
     <div class="meta" id="graphTitle">Граф пуст — откройте документ или сущность из результатов поиска.</div>
     <div id="cy"></div>
+    <div class="legend" id="cyLegend"></div>
   </section>
 
   <section id="view-gaps" class="hidden">
     <div class="meta">Совместные упоминания «материал × процесс» в документах корпуса.
-Красные нули — комбинации без единого документа: кандидаты в пробелы знаний.</div>
-    <div id="gapsBox" class="spin">загрузка…</div>
-  </section>
-
-  <section id="view-stats" class="hidden">
-    <div id="statsBox" class="spin">загрузка…</div>
+Красные ячейки — комбинации без единого документа: кандидаты в пробелы знаний.</div>
+    <div id="gapsBox"><div class="thinking"><div class="orbit"></div>загрузка…</div></div>
   </section>
 
   <section id="view-review" class="hidden">
     <div class="meta">Очередь эксперта: сущности и выводы, впервые извлечённые из текстов (needs_review) —
 подтвердить или поправить. Недоступна внешним партнёрам.</div>
-    <div id="reviewBox" class="spin">загрузка…</div>
+    <div id="reviewBox"><div class="thinking"><div class="orbit"></div>загрузка…</div></div>
+  </section>
+
+  <section id="view-stats" class="hidden">
+    <div id="statsBox"><div class="thinking"><div class="orbit"></div>загрузка…</div></div>
   </section>
 
   <section id="view-audit" class="hidden">
     <div class="meta">Журнал действий (кто, когда, что запрашивал) — виден только администратору.</div>
-    <div id="auditBox" class="spin">загрузка…</div>
+    <div id="auditBox"><div class="thinking"><div class="orbit"></div>загрузка…</div></div>
   </section>
 </main>
+
+<footer>Научный клубок · GraphRAG по корпусу R&amp;D · граф знаний + гибридный поиск + LLM-синтез</footer>
+</div>
 
 <script>
 const $ = id => document.getElementById(id);
 let lastHits = [];
 let lastAnswer = null;
 
+/* ---------- тема ---------- */
+function toggleTheme() {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem('skg_theme', next);
+}
+document.documentElement.dataset.theme = localStorage.getItem('skg_theme') || 'dark';
+
+/* ---------- экспорт ---------- */
 function exportMd() {
   const q = $('q').value.trim();
   const lines = [`# ${q}`, '', `*Сформировано: ${new Date().toLocaleString('ru')} · Научный клубок*`, ''];
@@ -168,6 +467,7 @@ function exportMd() {
   URL.revokeObjectURL(a.href);
 }
 
+/* ---------- вкладки ---------- */
 function showTab(name) {
   for (const t of ['answer','graph','gaps','review','stats','audit']) {
     $('view-'+t).classList.toggle('hidden', t !== name);
@@ -185,20 +485,24 @@ function demoAsk(question) {
   ask();
 }
 
+/* ---------- проверка ---------- */
 async function loadReview() {
   const box = $('reviewBox');
   const r = await apiFetch('/api/review?limit=100');
-  if (!r.ok) { box.className = ''; box.textContent = 'нет доступа (роль «внешний партнёр»)'; return; }
+  if (!r.ok) { box.innerHTML = emptyState('🔒', 'нет доступа (роль «внешний партнёр»)'); return; }
   const data = await r.json();
-  box.className = '';
-  box.innerHTML = '<div class="card">' + (data.items || []).map(it => `
-    <div class="reviewitem"><span class="meta">${esc(it.label)}</span>
+  const items = data.items || [];
+  if (!items.length) { box.innerHTML = emptyState('✨', 'очередь пуста — всё проверено'); return; }
+  box.innerHTML = '<div class="card">' + items.map(it => {
+    const c = it.confidence;
+    const cls = c == null ? '' : c >= .8 ? 'hi' : c >= .5 ? 'mid' : 'lo';
+    return `<div class="reviewitem"><span><span class="badge cat">${esc(it.label)}</span></span>
     <span>${esc(it.name)}</span>
-    <span class="meta">${it.confidence != null ? 'conf ' + it.confidence : ''}</span></div>
-  `).join('') + '</div>' || 'очередь пуста';
+    <span class="conf ${cls}">${c != null ? 'conf ' + c : ''}</span></div>`;
+  }).join('') + '</div>';
 }
 
-// --- RBAC: токен доступа и текущая роль ---
+/* ---------- RBAC: токен и роль ---------- */
 function apiFetch(url) {
   const t = localStorage.getItem('skg_token');
   return fetch(url, t ? {headers: {'X-Auth-Token': t}} : {});
@@ -215,7 +519,7 @@ async function refreshWhoami() {
     const r = await apiFetch('/api/whoami');
     if (!r.ok) { $('whoami').textContent = 'токен не принят'; return; }
     const d = await r.json();
-    $('whoami').textContent = d.name + ' · ' + d.role_label +
+    $('whoami').innerHTML = esc(d.name) + ' · <span class="role">' + esc(d.role_label) + '</span>' +
       (d.restricted ? ' · доступ ограничен' : '');
     $('tab-audit').style.display = d.can_view_audit ? '' : 'none';
   } catch (e) { $('whoami').textContent = ''; }
@@ -224,24 +528,29 @@ async function refreshWhoami() {
 async function loadAudit() {
   const box = $('auditBox');
   const r = await apiFetch('/api/audit');
-  if (!r.ok) { box.className = ''; box.textContent = 'нет доступа (нужна роль администратора)'; return; }
+  if (!r.ok) { box.innerHTML = emptyState('🔒', 'нет доступа (нужна роль администратора)'); return; }
   const data = await r.json();
-  box.className = '';
   box.innerHTML = (data.records || []).map(rec => `
     <div class="card"><div class="meta">${esc(rec.ts)} · <b>${esc(rec.user)}</b> (${esc(rec.role)}) · ${esc(rec.action)}</div>
-    <div class="frag">${esc(JSON.stringify(Object.fromEntries(Object.entries(rec).filter(([k]) => !['ts','user','role','action'].includes(k)))))}</div></div>
-  `).join('') || 'журнал пуст';
+    <div class="frag mono" style="font-size:12px">${esc(JSON.stringify(Object.fromEntries(Object.entries(rec).filter(([k]) => !['ts','user','role','action'].includes(k)))))}</div></div>
+  `).join('') || emptyState('📭', 'журнал пуст');
 }
 
 function esc(s) { return (s ?? '').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function emptyState(glyph, text) {
+  return `<div class="empty-state"><div class="glyph">${glyph}</div>${esc(text)}</div>`;
+}
 
+/* ---------- вопрос-ответ ---------- */
 async function ask() {
   const q = $('q').value.trim();
   if (!q) return;
   $('askBtn').disabled = true;
   $('answerBox').className = '';
-  $('answerBox').textContent = 'ищу и синтезирую…';
-  $('hits').innerHTML = '';
+  $('answerBox').innerHTML = '<div class="thinking"><div class="orbit"></div>ищу и синтезирую…</div>';
+  $('hits').innerHTML =
+    '<div class="card"><div class="skel" style="width:55%"></div><div class="skel" style="width:90%"></div><div class="skel" style="width:78%"></div></div>' +
+    '<div class="card"><div class="skel" style="width:45%"></div><div class="skel" style="width:85%"></div><div class="skel" style="width:70%"></div></div>';
   try {
     const params = new URLSearchParams({q});
     for (const [id, name] of [['fCategory','category'], ['fLanguage','language'],
@@ -258,6 +567,7 @@ async function ask() {
     $('exportRow').classList.toggle('hidden', lastHits.length === 0);
     loadExperts(q);  // необязательный блок, грузится параллельно
   } catch (e) {
+    $('hits').innerHTML = '';
     $('answerBox').textContent = 'Ошибка: ' + e;
   } finally {
     $('askBtn').disabled = false;
@@ -277,24 +587,28 @@ function renderAnswer(data) {
       : 'Ничего не найдено. Убедитесь, что корпус загружен (skg ingest) и посчитаны эмбеддинги (skg embed).';
   }
   if (data.filters && Object.keys(data.filters).length > 1) {
-    box.innerHTML += `<div class="meta" style="margin-top:10px">распознанные фильтры: ${esc(JSON.stringify(data.filters))}</div>`;
+    box.innerHTML += `<div class="meta" style="margin-top:10px">распознанные фильтры: <span class="mono">${esc(JSON.stringify(data.filters))}</span></div>`;
   }
 }
 
+const LBL_COLORS = {Document: '#5aa7ff', Material: '#5fd68b', Process: '#ffb454',
+  Equipment: '#b48cff', Facility: '#ff7a90', Conclusion: '#f4d35e', Person: '#7adcff'};
+
 function renderHits(hits) {
+  if (!hits.length) { $('hits').innerHTML = ''; return; }
   $('hits').innerHTML = hits.map((h, i) => `
-    <div class="card" id="hit${i+1}">
-      <h3>[${i+1}] ${esc(h.display_title || h.title)}</h3>
-      <div class="meta">${esc(h.category)}${h.journal ? ' · ' + esc(h.journal) : ''}${h.conference ? ' · ' + esc(h.conference) : ''}
+    <div class="card hitcard" id="hit${i+1}" style="animation-delay:${Math.min(i * 45, 400)}ms">
+      <h3><span class="n">[${i+1}]</span>${esc(h.display_title || h.title)}</h3>
+      <div class="meta"><span class="badge cat">${esc(h.category)}</span>${h.journal ? ' · ' + esc(h.journal) : ''}${h.conference ? ' · ' + esc(h.conference) : ''}
         ${h.year ? ' · <span class="num">' + h.year + '</span>' : ''} · ${esc(h.language || '')}
-        · ${esc(h.unit_kind)} ${h.unit_no} · rrf ${h.rrf_score}${h.via_graph ? ' · <span class="num" title="найден через граф знаний: документ упоминает сущности из вопроса">граф ✓</span>' : ''}${h.via_measure ? ' · <span class="num" title="во фрагменте зафиксировано измерение, удовлетворяющее числовому ограничению из вопроса">число ✓</span>' : ''}
+        · ${esc(h.unit_kind)} ${h.unit_no} · <span class="mono" style="font-size:11px">rrf ${h.rrf_score}</span>${h.via_graph ? ' <span class="badge graph" title="найден через граф знаний: документ упоминает сущности из вопроса">граф ✓</span>' : ''}${h.via_measure ? ' <span class="badge measure" title="во фрагменте зафиксировано измерение, удовлетворяющее числовому ограничению из вопроса">число ✓</span>' : ''}
         · <a class="cite" onclick="openDocGraph('${h.doc_id}', '${esc(h.title).replace(/'/g, "\\'")}')">граф →</a>
         · <a class="cite" onclick="toggleContext(this, '${h.chunk_id}')">контекст ↓</a></div>
       <div class="frag">${esc(h.text.length > 700 ? h.text.slice(0, 700) + '…' : h.text)}</div>
       <div class="context hidden"></div>
       <div class="chips">${(h.entities || []).map(e =>
         `<span class="chip" onclick="openEntityGraph('${e.label}','${esc(e.name).replace(/'/g, "\\'")}')">
-          <span class="lbl">${e.label[0]}</span>${esc(e.name)}</span>`).join('')}</div>
+          <span class="lbl" style="background:${LBL_COLORS[e.label] || '#8b9bb0'}">${e.label[0]}</span>${esc(e.name)}</span>`).join('')}</div>
     </div>`).join('');
 }
 
@@ -308,12 +622,12 @@ async function loadExperts(q) {
     const data = await r.json();
     const experts = data.experts || [];
     if (!experts.length) return;
-    box.innerHTML =
-      '<div class="meta" style="margin-bottom:6px">Носители экспертизы по теме — авторы релевантных документов (число = документов по теме):</div>' +
-      '<div class="chips">' + experts.map(e =>
-        `<span class="chip" title="${esc((e.titles || []).join(' • '))}">` +
-        `<span class="lbl">${e.docs}</span>${esc(e.name)}${e.lab ? ' · ' + esc(e.lab) : ''}</span>`
-      ).join('') + '</div>';
+    box.innerHTML = '<div class="card" style="margin:0">' +
+      '<div class="meta" style="margin-bottom:8px">🧑‍🔬 Носители экспертизы по теме — авторы релевантных документов (число = документов по теме):</div>' +
+      '<div class="chips" style="margin:0">' + experts.map(e =>
+        `<span class="chip static" title="${esc((e.titles || []).join(' • '))}">` +
+        `<span class="cnt">${e.docs}</span>${esc(e.name)}${e.lab ? ' · ' + esc(e.lab) : ''}</span>`
+      ).join('') + '</div></div>';
     box.classList.remove('hidden');
   } catch (e) { /* блок необязательный: ошибки не показываем */ }
 }
@@ -326,7 +640,7 @@ async function toggleContext(link, chunkId) {
     if (!r.ok) return;
     const data = await r.json();
     box.innerHTML = data.chunks.map(c =>
-      `<div class="frag" style="margin-top:8px;${data.focus.endsWith(':' + c.seq) ? 'border-left:2px solid var(--accent);padding-left:8px' : 'opacity:.75'}">
+      `<div class="frag" style="margin-top:8px;${data.focus.endsWith(':' + c.seq) ? 'border-left:2.5px solid var(--accent);padding-left:10px' : 'opacity:.6'}">
         <span class="meta">${esc(c.unit_kind)} ${c.unit_no}:</span> ${esc(c.text)}</div>`).join('');
     box.dataset.loaded = '1';
   }
@@ -340,12 +654,21 @@ function scrollToHit(n) {
     el.style.borderColor = 'var(--accent)'; setTimeout(() => el.style.borderColor = '', 1600); }
 }
 
-const CY_COLORS = {Document: '#4da3ff', Material: '#6dd28c', Process: '#ffb454',
-  Equipment: '#c792ea', Facility: '#ff7a90', Conclusion: '#f7e967', Person: '#89ddff'};
+/* ---------- граф ---------- */
+const LBL_RU = {Document: 'документ', Material: 'материал', Process: 'процесс',
+  Equipment: 'оборудование', Facility: 'площадка', Conclusion: 'вывод', Person: 'персона'};
+
+function drawLegend(nodes) {
+  const present = [...new Set(nodes.map(n => n.label))];
+  $('cyLegend').innerHTML = present.map(l =>
+    `<span><i style="background:${LBL_COLORS[l] || '#8b9bb0'}"></i>${LBL_RU[l] || l}</span>`).join('');
+}
 
 function drawGraph(data, title) {
   showTab('graph');
   $('graphTitle').textContent = title;
+  drawLegend(data.nodes);
+  const isLight = document.documentElement.dataset.theme === 'light';
   const elements = [
     ...data.nodes.map(n => ({data: {id: n.id, label: n.name?.slice(0, 40), type: n.label}})),
     ...data.edges.map((e, i) => ({data: {id: 'e'+i, source: e.from, target: e.to, w: e.weight || 1}})),
@@ -354,13 +677,19 @@ function drawGraph(data, title) {
     container: $('cy'), elements,
     style: [
       {selector: 'node', style: {
-        label: 'data(label)', color: '#dbe4ee', 'font-size': 10,
-        'background-color': ele => CY_COLORS[ele.data('type')] || '#8496a9',
-        width: 22, height: 22, 'text-wrap': 'ellipsis', 'text-max-width': 120,
+        label: 'data(label)', color: isLight ? '#1a2433' : '#e7edf5',
+        'font-size': 10, 'font-family': 'Inter, sans-serif',
+        'background-color': ele => LBL_COLORS[ele.data('type')] || '#8b9bb0',
+        width: 24, height: 24, 'text-wrap': 'ellipsis', 'text-max-width': 130,
+        'text-margin-y': -4, 'border-width': 2,
+        'border-color': isLight ? '#ffffff' : '#0b0f14',
+        'text-outline-width': 2,
+        'text-outline-color': isLight ? '#ffffff' : '#161d26',
       }},
-      {selector: 'node[type="Document"]', style: {shape: 'round-rectangle', width: 30, height: 22}},
-      {selector: 'edge', style: {width: 'mapData(w, 1, 10, 1, 5)', 'line-color': '#2a3441',
-        'curve-style': 'bezier'}},
+      {selector: 'node[type="Document"]', style: {shape: 'round-rectangle', width: 32, height: 24}},
+      {selector: 'edge', style: {width: 'mapData(w, 1, 10, 1, 5)',
+        'line-color': isLight ? '#c3cfdd' : '#2a3441', 'curve-style': 'bezier', opacity: .85}},
+      {selector: 'node:selected', style: {'border-color': '#5aa7ff', 'border-width': 3}},
     ],
     layout: {name: 'cose', animate: false, nodeRepulsion: 9000},
   });
@@ -378,35 +707,43 @@ async function openEntityGraph(label, name) {
   drawGraph(await r.json(), `${label}: ${name} — документы и со-упоминания`);
 }
 
+/* ---------- пробелы ---------- */
 async function loadGaps() {
   const r = await apiFetch('/api/gaps');
   const {processes, matrix} = await r.json();
-  if (!matrix.length) { $('gapsBox').textContent = 'нет данных — прогоните skg extract'; return; }
-  let html = '<table class="gaps"><tr><th></th>' +
+  if (!matrix.length) { $('gapsBox').innerHTML = emptyState('🧩', 'нет данных — прогоните skg extract'); return; }
+  const maxV = Math.max(1, ...matrix.flatMap(row => row.cells));
+  let html = '<div class="gapscroll"><table class="gaps"><tr><th></th>' +
     processes.map(p => `<th class="colh">${esc(p)}</th>`).join('') + '</tr>';
   for (const row of matrix) {
     html += `<tr><th class="rowh">${esc(row.material)}</th>` +
-      row.cells.map(v => `<td class="${v === 0 ? 'gap0' : ''}">${v || 0}</td>`).join('') + '</tr>';
+      row.cells.map(v => {
+        if (v === 0) return '<td class="gap0" title="0 документов — кандидат в пробел">0</td>';
+        const a = .12 + .55 * Math.sqrt(v / maxV);
+        return `<td style="background:rgba(var(--heat-hi), ${a.toFixed(2)});color:var(--text)" title="${v} докум.">${v}</td>`;
+      }).join('') + '</tr>';
   }
-  $('gapsBox').innerHTML = html + '</table>';
+  $('gapsBox').innerHTML = html + '</table></div>';
 }
 
+/* ---------- статистика ---------- */
 async function loadStats() {
   const r = await apiFetch('/api/stats');
   const s = await r.json();
-  const block = (title, rows, f) => `<div class="card"><h3>${title}</h3>` +
-    rows.map(f).join('') + '</div>';
+  const block = (title, rows, f) => `<div class="card"><h3>${title}</h3>` + rows.map(f).join('') + '</div>';
   $('statsBox').innerHTML = '<div class="statgrid">' +
     block('Документы по категориям', s.documents, d =>
-      `<div>${esc(d.category)} — <span class="num">${d.n}</span> <span class="meta">(${d.year_min ?? '—'}–${d.year_max ?? '—'})</span></div>`) +
-    block('Узлы графа', s.nodes, n => `<div>${esc(n.label)} — <span class="num">${n.n}</span></div>`) +
-    block('Связи', s.relations, x => `<div>${esc(x.type)} — <span class="num">${x.n}</span></div>`) +
+      `<div class="statrow"><span class="name">${esc(d.category)}</span><span class="val">${d.n}<span class="rng">${d.year_min ?? '—'}–${d.year_max ?? '—'}</span></span></div>`) +
+    block('Узлы графа', s.nodes, n =>
+      `<div class="statrow"><span class="name">${esc(n.label)}</span><span class="val">${n.n}</span></div>`) +
+    block('Связи', s.relations, x =>
+      `<div class="statrow"><span class="name">${esc(x.type)}</span><span class="val">${x.n}</span></div>`) +
     block('Очередь на проверку эксперта', s.needs_review.length ? s.needs_review : [{label: '—', n: 0}],
-      x => `<div>${esc(x.label)} — <span class="num">${x.n}</span></div>`) +
+      x => `<div class="statrow"><span class="name">${esc(x.label)}</span><span class="val">${x.n}</span></div>`) +
     '</div>';
 }
 
-// инициализация: восстановить токен и показать роль
+/* ---------- инициализация ---------- */
 const savedToken = localStorage.getItem('skg_token');
 if (savedToken) $('authToken').value = savedToken;
 refreshWhoami();
