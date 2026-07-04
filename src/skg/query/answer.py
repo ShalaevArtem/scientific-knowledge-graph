@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from typing import Any
 
 from neo4j import Session
@@ -35,7 +36,7 @@ PARSE_PROMPT = """Разбери вопрос к базе знаний горн�
                    "unit": null | "единица как в вопросе"}]
 }
 Только явные ограничения из вопроса; сомневаешься — null (constraints: []).
-«за последние N лет» считай от 2026 года. «по 200–300 мг/л» → op "range", value 200, value_max 300.
+«за последние N лет» считай от {current_year} года. «по 200–300 мг/л» → op "range", value 200, value_max 300.
 Числа не выдумывай и не пересчитывай, десятичная точка.
 Ответ — только JSON."""
 
@@ -50,10 +51,14 @@ SYNTH_PROMPT = """Ты — аналитик горно-металлургиче�
 Пиши по-русски, компактно."""
 
 
-def parse_question(llm: LLMClient, question: str) -> dict[str, Any]:
+def parse_question(
+    llm: LLMClient, question: str, current_year: int | None = None
+) -> dict[str, Any]:
+    # текущий год подставляется динамически: «за последние N лет» не устареет
+    prompt = PARSE_PROMPT.replace("{current_year}", str(current_year or date.today().year))
     try:
         # запас на длинный список constraints: 500 токенов обрезали JSON с 6 ограничениями
-        parsed = llm.complete_json(PARSE_PROMPT, question, max_tokens=1500)
+        parsed = llm.complete_json(prompt, question, max_tokens=1500)
     except LLMError:
         return {"query": question}
     constraints = [
@@ -88,17 +93,28 @@ def answer_question(
     question: str,
     llm: LLMClient | None = None,
     k: int = 10,
+    category: str | None = None,
+    language: str | None = None,
+    year_from: int | None = None,
+    year_to: int | None = None,
     overrides: dict[str, Any] | None = None,
     allowed_categories: list[str] | None = None,
 ) -> dict[str, Any]:
-    """overrides — фильтры, выставленные пользователем в UI явно;
+    """Явные фильтры (аргументы category/language/year_* либо словарь overrides)
     имеют приоритет над распознанными из текста вопроса.
     allowed_categories — ограничение роли (RBAC): None = без ограничений."""
+    explicit = {
+        k_: v for k_, v in {
+            "category": category, "language": language,
+            "year_from": year_from, "year_to": year_to,
+        }.items() if v is not None
+    }
+    explicit.update(overrides or {})
+
     filters: dict[str, Any] = {"query": question}
     if llm is not None:
         filters = parse_question(llm, question)
-    if overrides:
-        filters.update(overrides)
+    filters.update(explicit)
 
     # сущности графа, распознанные в вопросе, — графовый источник кандидатов
     entities = resolve_question_entities(session, f"{question} {filters['query']}")

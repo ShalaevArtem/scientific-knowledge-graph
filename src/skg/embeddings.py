@@ -8,7 +8,6 @@ chunk_embedding (schema/003_corpus.cypher) — при смене модели п
 from __future__ import annotations
 
 import os
-from typing import Iterable
 
 from neo4j import Session
 

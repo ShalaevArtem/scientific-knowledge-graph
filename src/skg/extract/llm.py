@@ -1,9 +1,11 @@
-"""Подключаемый LLM-клиент: Anthropic или любой OpenAI-совместимый API.
+"""Подключаемый LLM-клиент: Anthropic, Yandex AI Studio или OpenAI-совместимый API.
 
 Конфигурация через .env:
-  LLM_PROVIDER = anthropic | openai   (openai = и любой совместимый: openrouter, deepseek…)
-  LLM_MODEL    = claude-haiku-4-5-20251001 | gpt-4o-mini | …
+  LLM_PROVIDER = anthropic | openai | yandex   (openai = и любой совместимый: openrouter…;
+                 Yandex доступен и как openai-совместимый эндпоинт, и нативно)
+  LLM_MODEL    = claude-haiku-4-5-20251001 | gpt-4o-mini | yandexgpt-lite/latest | …
   LLM_API_KEY  = ключ
+  LLM_FOLDER_ID = folder id для Yandex AI Studio (нативный провайдер)
   LLM_BASE_URL = переопределение базового URL (для совместимых провайдеров)
 
 Клиент один метод: complete_json(system, user) → dict. Ответ принуждается к JSON
@@ -26,14 +28,26 @@ class LLMError(Exception):
 
 
 class LLMClient:
-    def __init__(self, provider: str, model: str, api_key: str, base_url: str | None = None):
+    def __init__(
+        self,
+        provider: str,
+        model: str,
+        api_key: str,
+        base_url: str | None = None,
+        folder_id: str | None = None,
+    ):
         self.provider = provider
         self.model = model
         self.api_key = api_key
+        self.folder_id = folder_id
         if provider == "anthropic":
             self.base_url = base_url or "https://api.anthropic.com"
         elif provider == "openai":
             self.base_url = base_url or "https://api.openai.com/v1"
+        elif provider == "yandex":
+            self.base_url = base_url or "https://llm.api.cloud.yandex.net"
+            if not self.folder_id and not self.model.startswith("gpt://"):
+                raise LLMError("LLM_FOLDER_ID обязателен для Yandex AI Studio")
         else:
             raise LLMError(f"неизвестный провайдер: {provider}")
         self._http = httpx.Client(timeout=120.0)
@@ -94,6 +108,25 @@ class LLMClient:
             return "".join(
                 block["text"] for block in resp.json()["content"] if block["type"] == "text"
             )
+        if self.provider == "yandex":
+            resp = self._http.post(
+                f"{self.base_url}/foundationModels/v1/completion",
+                headers={"Authorization": f"Api-Key {self.api_key}"},
+                json={
+                    "modelUri": _yandex_model_uri(self.model, self.folder_id),
+                    "completionOptions": {
+                        "stream": False,
+                        "temperature": 0.1 if json_mode else 0.2,
+                        "maxTokens": str(max_tokens),
+                    },
+                    "messages": [
+                        {"role": "system", "text": system},
+                        {"role": "user", "text": user},
+                    ],
+                },
+            )
+            _raise_for_status(resp)
+            return resp.json()["result"]["alternatives"][0]["message"]["text"]
         payload = {
             "model": self.model,
             "max_tokens": max_tokens,
@@ -129,6 +162,12 @@ def _parse_json(raw: str) -> dict:
     return json.loads(text[start : end + 1])
 
 
+def _yandex_model_uri(model: str, folder_id: str | None) -> str:
+    if model.startswith("gpt://"):
+        return model
+    return f"gpt://{folder_id}/{model}"
+
+
 def get_llm(role: str = "extract") -> LLMClient:
     """role="extract" — дешёвая модель для массового извлечения;
     role="synth" — модель для синтеза ответов (LLM_MODEL_SYNTH, по умолчанию та же)."""
@@ -146,4 +185,5 @@ def get_llm(role: str = "extract") -> LLMClient:
         model=model,
         api_key=api_key,
         base_url=os.environ.get("LLM_BASE_URL") or None,
+        folder_id=os.environ.get("LLM_FOLDER_ID") or None,
     )
