@@ -280,10 +280,16 @@ RETURN e, collect({{doc: d, others: others}}) AS neighborhood
 def _node_payload(node) -> dict:
     label = list(node.labels)[0]
     props = dict(node)
+    # у Conclusion нет name/title/grade — только text; берём его усечённо,
+    # id как подпись оставляем лишь крайним фолбэком (это «набор букв и цифр»)
+    text = props.get("text")
+    if text and len(text) > 80:
+        text = text[:80].rstrip() + "…"
     return {
         "id": f"{label}:{props.get('id') or props.get('name')}",
         "label": label,
-        "name": props.get("title") or props.get("name") or props.get("grade") or props.get("id"),
+        "name": (props.get("title") or props.get("name") or props.get("grade")
+                 or text or props.get("id")),
         "needs_review": props.get("needs_review", False),
     }
 
