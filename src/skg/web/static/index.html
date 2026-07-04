@@ -60,9 +60,14 @@
 </style>
 </head>
 <body>
-<header>
+<header style="position:relative">
   <h1>Научный клубок <span style="color:var(--muted);font-weight:400">· карта знаний R&D</span></h1>
   <div class="sub">граф знаний + семантический поиск по корпусу: гидрометаллургия, пирометаллургия, обогащение, экология</div>
+  <div style="position:absolute;top:14px;right:20px;text-align:right">
+    <input id="authToken" type="password" placeholder="токен доступа"
+           style="width:150px;padding:4px 8px;font-size:12px" onchange="setToken(this.value)">
+    <div id="whoami" class="meta" style="margin-top:4px"></div>
+  </div>
 </header>
 
 <div class="searchrow">
@@ -88,6 +93,7 @@
   <a id="tab-graph" onclick="showTab('graph')">Граф</a>
   <a id="tab-gaps" onclick="showTab('gaps')">Пробелы</a>
   <a id="tab-stats" onclick="showTab('stats')">База</a>
+  <a id="tab-audit" onclick="showTab('audit')" style="display:none">Аудит</a>
 </nav>
 
 <main>
@@ -97,6 +103,7 @@
     <div id="exportRow" class="hidden" style="margin-bottom:12px">
       <button style="padding:8px 14px;font-size:13px" onclick="exportMd()">⬇ Экспорт в Markdown</button>
     </div>
+    <div id="expertsBox" class="hidden" style="margin-bottom:14px"></div>
     <div id="hits"></div>
   </section>
 
@@ -113,6 +120,11 @@
 
   <section id="view-stats" class="hidden">
     <div id="statsBox" class="spin">загрузка…</div>
+  </section>
+
+  <section id="view-audit" class="hidden">
+    <div class="meta">Журнал действий (кто, когда, что запрашивал) — виден только администратору.</div>
+    <div id="auditBox" class="spin">загрузка…</div>
   </section>
 </main>
 
@@ -139,12 +151,48 @@ function exportMd() {
 }
 
 function showTab(name) {
-  for (const t of ['answer','graph','gaps','stats']) {
+  for (const t of ['answer','graph','gaps','stats','audit']) {
     $('view-'+t).classList.toggle('hidden', t !== name);
     $('tab-'+t).classList.toggle('active', t === name);
   }
   if (name === 'gaps') loadGaps();
   if (name === 'stats') loadStats();
+  if (name === 'audit') loadAudit();
+}
+
+// --- RBAC: токен доступа и текущая роль ---
+function apiFetch(url) {
+  const t = localStorage.getItem('skg_token');
+  return fetch(url, t ? {headers: {'X-Auth-Token': t}} : {});
+}
+
+function setToken(v) {
+  v && v.trim() ? localStorage.setItem('skg_token', v.trim())
+                : localStorage.removeItem('skg_token');
+  refreshWhoami();
+}
+
+async function refreshWhoami() {
+  try {
+    const r = await apiFetch('/api/whoami');
+    if (!r.ok) { $('whoami').textContent = 'токен не принят'; return; }
+    const d = await r.json();
+    $('whoami').textContent = d.name + ' · ' + d.role_label +
+      (d.restricted ? ' · доступ ограничен' : '');
+    $('tab-audit').style.display = d.can_view_audit ? '' : 'none';
+  } catch (e) { $('whoami').textContent = ''; }
+}
+
+async function loadAudit() {
+  const box = $('auditBox');
+  const r = await apiFetch('/api/audit');
+  if (!r.ok) { box.className = ''; box.textContent = 'нет доступа (нужна роль администратора)'; return; }
+  const data = await r.json();
+  box.className = '';
+  box.innerHTML = (data.records || []).map(rec => `
+    <div class="card"><div class="meta">${esc(rec.ts)} · <b>${esc(rec.user)}</b> (${esc(rec.role)}) · ${esc(rec.action)}</div>
+    <div class="frag">${esc(JSON.stringify(Object.fromEntries(Object.entries(rec).filter(([k]) => !['ts','user','role','action'].includes(k)))))}</div></div>
+  `).join('') || 'журнал пуст';
 }
 
 function esc(s) { return (s ?? '').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -158,13 +206,19 @@ async function ask() {
   $('hits').innerHTML = '';
   try {
     const params = new URLSearchParams({q});
-    const r = await fetch('/api/answer?' + params);
+    for (const [id, name] of [['fCategory','category'], ['fLanguage','language'],
+                              ['fYearFrom','year_from'], ['fYearTo','year_to']]) {
+      const v = $(id).value.trim();
+      if (v) params.set(name, v);
+    }
+    const r = await apiFetch('/api/answer?' + params);
     const data = await r.json();
     lastHits = data.citations || [];
     lastAnswer = data.answer || null;
     renderAnswer(data);
     renderHits(lastHits);
     $('exportRow').classList.toggle('hidden', lastHits.length === 0);
+    loadExperts(q);  // необязательный блок, грузится параллельно
   } catch (e) {
     $('answerBox').textContent = 'Ошибка: ' + e;
   } finally {
@@ -195,7 +249,7 @@ function renderHits(hits) {
       <h3>[${i+1}] ${esc(h.display_title || h.title)}</h3>
       <div class="meta">${esc(h.category)}${h.journal ? ' · ' + esc(h.journal) : ''}${h.conference ? ' · ' + esc(h.conference) : ''}
         ${h.year ? ' · <span class="num">' + h.year + '</span>' : ''} · ${esc(h.language || '')}
-        · ${esc(h.unit_kind)} ${h.unit_no} · rrf ${h.rrf_score}
+        · ${esc(h.unit_kind)} ${h.unit_no} · rrf ${h.rrf_score}${h.via_graph ? ' · <span class="num" title="найден через граф знаний: документ упоминает сущности из вопроса">граф ✓</span>' : ''}${h.via_measure ? ' · <span class="num" title="во фрагменте зафиксировано измерение, удовлетворяющее числовому ограничению из вопроса">число ✓</span>' : ''}
         · <a class="cite" onclick="openDocGraph('${h.doc_id}', '${esc(h.title).replace(/'/g, "\\'")}')">граф →</a>
         · <a class="cite" onclick="toggleContext(this, '${h.chunk_id}')">контекст ↓</a></div>
       <div class="frag">${esc(h.text.length > 700 ? h.text.slice(0, 700) + '…' : h.text)}</div>
@@ -206,11 +260,31 @@ function renderHits(hits) {
     </div>`).join('');
 }
 
+async function loadExperts(q) {
+  const box = $('expertsBox');
+  box.classList.add('hidden');
+  box.innerHTML = '';
+  try {
+    const r = await apiFetch('/api/experts?topic=' + encodeURIComponent(q));
+    if (!r.ok) return;
+    const data = await r.json();
+    const experts = data.experts || [];
+    if (!experts.length) return;
+    box.innerHTML =
+      '<div class="meta" style="margin-bottom:6px">Носители экспертизы по теме — авторы релевантных документов (число = документов по теме):</div>' +
+      '<div class="chips">' + experts.map(e =>
+        `<span class="chip" title="${esc((e.titles || []).join(' • '))}">` +
+        `<span class="lbl">${e.docs}</span>${esc(e.name)}${e.lab ? ' · ' + esc(e.lab) : ''}</span>`
+      ).join('') + '</div>';
+    box.classList.remove('hidden');
+  } catch (e) { /* блок необязательный: ошибки не показываем */ }
+}
+
 async function toggleContext(link, chunkId) {
   const box = link.closest('.card').querySelector('.context');
   if (!box.classList.contains('hidden')) { box.classList.add('hidden'); link.textContent = 'контекст ↓'; return; }
   if (!box.dataset.loaded) {
-    const r = await fetch('/api/context?chunk_id=' + encodeURIComponent(chunkId));
+    const r = await apiFetch('/api/context?chunk_id=' + encodeURIComponent(chunkId));
     if (!r.ok) return;
     const data = await r.json();
     box.innerHTML = data.chunks.map(c =>
@@ -255,19 +329,19 @@ function drawGraph(data, title) {
 }
 
 async function openDocGraph(docId, title) {
-  const r = await fetch('/api/graph?doc_id=' + encodeURIComponent(docId));
+  const r = await apiFetch('/api/graph?doc_id=' + encodeURIComponent(docId));
   drawGraph(await r.json(), 'Окрестность документа: ' + title);
 }
 async function openEntityGraph(label, name) {
   const key = {M: 'M:', P: 'P:', E: 'E:'}[label[0]] !== undefined && label !== 'Facility'
     ? label[0] + ':' + name.toLowerCase().replace(/[\s\-_/]+/g, '') : name;
-  const r = await fetch(`/api/graph?label=${label}&key=${encodeURIComponent(key)}`);
+  const r = await apiFetch(`/api/graph?label=${label}&key=${encodeURIComponent(key)}`);
   if (!r.ok) { alert('не удалось построить окрестность'); return; }
   drawGraph(await r.json(), `${label}: ${name} — документы и со-упоминания`);
 }
 
 async function loadGaps() {
-  const r = await fetch('/api/gaps');
+  const r = await apiFetch('/api/gaps');
   const {processes, matrix} = await r.json();
   if (!matrix.length) { $('gapsBox').textContent = 'нет данных — прогоните skg extract'; return; }
   let html = '<table class="gaps"><tr><th></th>' +
@@ -280,7 +354,7 @@ async function loadGaps() {
 }
 
 async function loadStats() {
-  const r = await fetch('/api/stats');
+  const r = await apiFetch('/api/stats');
   const s = await r.json();
   const block = (title, rows, f) => `<div class="card"><h3>${title}</h3>` +
     rows.map(f).join('') + '</div>';
@@ -293,6 +367,11 @@ async function loadStats() {
       x => `<div>${esc(x.label)} — <span class="num">${x.n}</span></div>`) +
     '</div>';
 }
+
+// инициализация: восстановить токен и показать роль
+const savedToken = localStorage.getItem('skg_token');
+if (savedToken) $('authToken').value = savedToken;
+refreshWhoami();
 </script>
 </body>
 </html>

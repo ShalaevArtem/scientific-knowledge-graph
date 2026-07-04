@@ -39,7 +39,7 @@ class LLMClient:
         self._http = httpx.Client(timeout=120.0)
 
     def complete_text(self, system: str, user: str, max_tokens: int = 2048) -> str:
-        return self._complete(system, user, max_tokens, json_mode=False)
+        return self._complete_retry(system, user, max_tokens, json_mode=False)
 
     def _complete_retry(self, system: str, user: str, max_tokens: int, json_mode: bool) -> str:
         """Ретраи на лимиты/сбои API (429/5xx/сеть) с экспоненциальной паузой."""
