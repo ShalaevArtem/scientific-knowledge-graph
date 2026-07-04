@@ -26,7 +26,7 @@ docker compose up -d neo4j
 docker compose stop neo4j
 
 # 2) загрузить дамп в базу 'neo4j' (сервер не запущен)
-docker compose run --rm --entrypoint bash neo4j -lc \
+docker compose run --rm --entrypoint bash neo4j -c \
   "neo4j-admin database load neo4j --from-path=/dump --overwrite-destination=true"
 
 # 3) поднять весь стек с данными
