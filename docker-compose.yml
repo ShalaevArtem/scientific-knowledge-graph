@@ -4,7 +4,7 @@
 # База поднимается пустой: инициализация — schema/seed/данные (см. README).
 services:
   app:
-    image: arseso/skg-app:1.0.0          # тег для публикации в реестр (GHCR/Docker Hub)
+    image: arseso/skg-app         # тег для публикации в реестр (GHCR/Docker Hub)
     depends_on:
       neo4j:
         condition: service_healthy  # стартуем только после готовности БД
@@ -15,7 +15,7 @@ services:
       NEO4J_URI: bolt://neo4j:7687
       PORT: "8000"
     ports:
-      - "${APP_PORT}:8000"
+      - "${APP_PORT:-8000}:8000"
     restart: unless-stopped
     networks:
       - skg-app
