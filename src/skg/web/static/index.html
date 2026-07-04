@@ -35,28 +35,28 @@
     --heat-hi: 47, 127, 224;
   }
   [data-theme="light"] {
-    --bg: #f3f5f9;
-    --bg-glow-1: rgba(77, 143, 255, .12);
-    --bg-glow-2: rgba(160, 96, 255, .08);
-    --panel: rgba(255, 255, 255, .82);
-    --panel-solid: #ffffff;
-    --panel2: #eef2f8;
-    --border: #d8e0ea;
-    --border-soft: rgba(60, 90, 140, .16);
-    --text: #1a2433;
-    --muted: #5b6b80;
-    --faint: #9aa8ba;
-    --accent: #2f7fe0;
-    --accent-deep: #1f66c0;
-    --accent2: #d98a1f;
-    --violet: #7d55d4;
-    --good: #1f9e57;
-    --warn: #d94f6a;
-    --gold: #b8912a;
-    --cyan: #1993c4;
-    --chip-bg: rgba(47, 127, 224, .07);
-    --shadow: 0 10px 32px rgba(30, 50, 90, .13);
-    --shadow-sm: 0 4px 14px rgba(30, 50, 90, .09);
+    --bg: #dfe3ea;
+    --bg-glow-1: rgba(77, 143, 255, .07);
+    --bg-glow-2: rgba(160, 96, 255, .05);
+    --panel: rgba(236, 239, 244, .78);
+    --panel-solid: #eceff4;
+    --panel2: #dde2ea;
+    --border: #c3ccd8;
+    --border-soft: rgba(60, 90, 140, .18);
+    --text: #2b3646;
+    --muted: #617085;
+    --faint: #94a1b3;
+    --accent: #3572c4;
+    --accent-deep: #2a5da5;
+    --accent2: #b97a20;
+    --violet: #6f52b8;
+    --good: #2b8a54;
+    --warn: #c25068;
+    --gold: #a3831f;
+    --cyan: #1f82ab;
+    --chip-bg: rgba(53, 114, 196, .08);
+    --shadow: 0 10px 32px rgba(40, 55, 85, .12);
+    --shadow-sm: 0 4px 14px rgba(40, 55, 85, .08);
   }
 
   * { box-sizing: border-box; }
@@ -677,14 +677,14 @@ function drawGraph(data, title) {
     container: $('cy'), elements,
     style: [
       {selector: 'node', style: {
-        label: 'data(label)', color: isLight ? '#1a2433' : '#e7edf5',
+        label: 'data(label)', color: isLight ? '#2b3646' : '#e7edf5',
         'font-size': 10, 'font-family': 'Inter, sans-serif',
         'background-color': ele => LBL_COLORS[ele.data('type')] || '#8b9bb0',
         width: 24, height: 24, 'text-wrap': 'ellipsis', 'text-max-width': 130,
         'text-margin-y': -4, 'border-width': 2,
-        'border-color': isLight ? '#ffffff' : '#0b0f14',
+        'border-color': isLight ? '#eceff4' : '#0b0f14',
         'text-outline-width': 2,
-        'text-outline-color': isLight ? '#ffffff' : '#161d26',
+        'text-outline-color': isLight ? '#eceff4' : '#161d26',
       }},
       {selector: 'node[type="Document"]', style: {shape: 'round-rectangle', width: 32, height: 24}},
       {selector: 'edge', style: {width: 'mapData(w, 1, 10, 1, 5)',
