@@ -24,7 +24,7 @@ CATEGORY_BY_FOLDER = {
 }
 
 YEAR_RE = re.compile(r"(?:19[5-9]\d|20[0-2]\d)")  # 1950–2029: номера вроде «PO 1901» — не годы
-REPORT_AUTHOR_RE = re.compile(r"^Доклад_(.+?)\.(pdf|docx|pptx|docm)$", re.IGNORECASE)
+REPORT_AUTHOR_RE = re.compile(r"^Доклад_(.+?)\.(pdf|docx|pptx|docm|xlsx?|xlsm)$", re.IGNORECASE)
 
 
 @dataclass
