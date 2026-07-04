@@ -213,6 +213,11 @@ def display_title(row: dict[str, Any]) -> str:
     return title
 
 
+def _text_signature(text: str) -> str:
+    """Грубая сигнатура для отсечения одинаковых фрагментов из журнальных подшивок."""
+    return re.sub(r"\s+", " ", text).casefold().strip()[:420]
+
+
 def _fulltext_escape(query: str) -> str:
     """Экранирует спецсимволы Lucene, сохраняя слова запроса."""
     out = []
@@ -275,13 +280,18 @@ def hybrid_search(
     graph_set = set(graph_ids)
     measure_set = set(measure_chunk_ids or [])
     per_doc: dict[str, int] = {}  # диверсификация: топ не забивается чанками одного документа
+    seen_texts: set[str] = set()  # перепечатки одного текста в разных выпусках
     results = []
     for cid in ranked_ids:
         row = by_id.get(cid)
         if row is None:  # отфильтрован по метаданным
             continue
+        signature = _text_signature(row.get("text") or "")
+        if signature and signature in seen_texts:
+            continue
         if per_doc.get(row["doc_id"], 0) >= 2:
             continue
+        seen_texts.add(signature)
         per_doc[row["doc_id"]] = per_doc.get(row["doc_id"], 0) + 1
         row["rrf_score"] = round(scores[cid], 5)
         row["display_title"] = display_title(row)

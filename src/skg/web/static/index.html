@@ -27,6 +27,10 @@
   .filters { display: flex; gap: 8px; padding: 0 28px 12px; flex-wrap: wrap; }
   .filters select, .filters input { background: var(--panel); color: var(--text);
     border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+  .demos { display: flex; gap: 8px; padding: 0 28px 14px; flex-wrap: wrap; }
+  .demo { background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+    padding: 7px 10px; border-radius: 8px; font-size: 12.5px; cursor: pointer; }
+  .demo:hover { border-color: var(--accent); }
   nav { display: flex; gap: 4px; padding: 0 28px; border-bottom: 1px solid var(--border); }
   nav a { padding: 10px 16px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent;
     text-decoration: none; font-size: 14px; }
@@ -54,6 +58,7 @@
     white-space: nowrap; font-weight: 500; }
   .gap0 { background: #251820; color: var(--warn); }
   .statgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+  .reviewitem { display: grid; grid-template-columns: 110px 1fr 80px; gap: 10px; align-items: baseline; }
   .spin { color: var(--muted); padding: 30px; text-align: center; }
   .hidden { display: none; }
   .num { color: var(--accent2); }
@@ -87,11 +92,18 @@
   <input id="fYearFrom" type="number" placeholder="год от" style="width:90px">
   <input id="fYearTo" type="number" placeholder="год до" style="width:90px">
 </div>
+<div class="demos">
+  <span class="demo" onclick="demoAsk('Какие методы обессоливания воды подходят для обогатительной фабрики при сульфатах и хлоридах 200-300 мг/л?')">обессоливание воды</span>
+  <span class="demo" onclick="demoAsk('Какие технические решения организации циркуляции католита при электроэкстракции никеля описаны в мировой практике, какая скорость потока оптимальна?')">циркуляция католита</span>
+  <span class="demo" onclick="demoAsk('Покажите эксперименты и публикации по распределению Au, Ag и МПГ между штейном и шлаком за последние 5 лет.')">Au, Ag и МПГ</span>
+  <span class="demo" onclick="demoAsk('Какие способы закачки шахтных вод в глубокие горизонты применялись в России и за рубежом, каковы ТЭП?')">шахтные воды</span>
+</div>
 
 <nav>
   <a id="tab-answer" class="active" onclick="showTab('answer')">Ответ и источники</a>
   <a id="tab-graph" onclick="showTab('graph')">Граф</a>
   <a id="tab-gaps" onclick="showTab('gaps')">Пробелы</a>
+  <a id="tab-review" onclick="showTab('review')">Проверка</a>
   <a id="tab-stats" onclick="showTab('stats')">База</a>
   <a id="tab-audit" onclick="showTab('audit')" style="display:none">Аудит</a>
 </nav>
@@ -120,6 +132,12 @@
 
   <section id="view-stats" class="hidden">
     <div id="statsBox" class="spin">загрузка…</div>
+  </section>
+
+  <section id="view-review" class="hidden">
+    <div class="meta">Очередь эксперта: сущности и выводы, впервые извлечённые из текстов (needs_review) —
+подтвердить или поправить. Недоступна внешним партнёрам.</div>
+    <div id="reviewBox" class="spin">загрузка…</div>
   </section>
 
   <section id="view-audit" class="hidden">
@@ -151,13 +169,33 @@ function exportMd() {
 }
 
 function showTab(name) {
-  for (const t of ['answer','graph','gaps','stats','audit']) {
+  for (const t of ['answer','graph','gaps','review','stats','audit']) {
     $('view-'+t).classList.toggle('hidden', t !== name);
     $('tab-'+t).classList.toggle('active', t === name);
   }
   if (name === 'gaps') loadGaps();
   if (name === 'stats') loadStats();
+  if (name === 'review') loadReview();
   if (name === 'audit') loadAudit();
+}
+
+function demoAsk(question) {
+  $('q').value = question;
+  showTab('answer');
+  ask();
+}
+
+async function loadReview() {
+  const box = $('reviewBox');
+  const r = await apiFetch('/api/review?limit=100');
+  if (!r.ok) { box.className = ''; box.textContent = 'нет доступа (роль «внешний партнёр»)'; return; }
+  const data = await r.json();
+  box.className = '';
+  box.innerHTML = '<div class="card">' + (data.items || []).map(it => `
+    <div class="reviewitem"><span class="meta">${esc(it.label)}</span>
+    <span>${esc(it.name)}</span>
+    <span class="meta">${it.confidence != null ? 'conf ' + it.confidence : ''}</span></div>
+  `).join('') + '</div>' || 'очередь пуста';
 }
 
 // --- RBAC: токен доступа и текущая роль ---
