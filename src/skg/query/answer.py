@@ -15,7 +15,12 @@ from typing import Any
 from neo4j import Session
 
 from ..extract.llm import LLMClient, LLMError
-from .search import attach_doc_entities, hybrid_search
+from .search import (
+    attach_doc_entities,
+    hybrid_search,
+    measurement_candidates,
+    resolve_question_entities,
+)
 
 PARSE_PROMPT = """Разбери вопрос к базе знаний горно-металлургического НИИ в JSON-фильтры:
 {
@@ -23,9 +28,15 @@ PARSE_PROMPT = """Разбери вопрос к базе знаний горн�
   "year_from": null | int, "year_to": null | int,
   "language": null | "ru" | "en",
   "category": null | "статья" | "обзор" | "доклад" | "журнальная статья" | "материалы конференции",
-  "geography": null | "РФ" | "мир"
+  "geography": null | "РФ" | "мир",
+  "constraints": [{"property": "показатель как в вопросе (сульфаты, сухой остаток, температура…)",
+                   "op": "<=" | ">=" | "<" | ">" | "=" | "range",
+                   "value": число, "value_max": null | число (для range),
+                   "unit": null | "единица как в вопросе"}]
 }
-Только явные ограничения из вопроса; сомневаешься — null. «за последние N лет» считай от 2026 года.
+Только явные ограничения из вопроса; сомневаешься — null (constraints: []).
+«за последние N лет» считай от 2026 года. «по 200–300 мг/л» → op "range", value 200, value_max 300.
+Числа не выдумывай и не пересчитывай, десятичная точка.
 Ответ — только JSON."""
 
 SYNTH_PROMPT = """Ты — аналитик горно-металлургического НИИ. Ответь на вопрос по фрагментам
@@ -41,9 +52,14 @@ SYNTH_PROMPT = """Ты — аналитик горно-металлургиче�
 
 def parse_question(llm: LLMClient, question: str) -> dict[str, Any]:
     try:
-        parsed = llm.complete_json(PARSE_PROMPT, question, max_tokens=500)
+        # запас на длинный список constraints: 500 токенов обрезали JSON с 6 ограничениями
+        parsed = llm.complete_json(PARSE_PROMPT, question, max_tokens=1500)
     except LLMError:
         return {"query": question}
+    constraints = [
+        c for c in (parsed.get("constraints") or [])
+        if isinstance(c, dict) and c.get("property") and isinstance(c.get("value"), (int, float))
+    ]
     return {
         "query": parsed.get("query") or question,
         "year_from": parsed.get("year_from"),
@@ -51,6 +67,7 @@ def parse_question(llm: LLMClient, question: str) -> dict[str, Any]:
         "language": parsed.get("language"),
         "category": parsed.get("category"),
         "geography": parsed.get("geography"),
+        "constraints": constraints,
     }
 
 
@@ -71,10 +88,25 @@ def answer_question(
     question: str,
     llm: LLMClient | None = None,
     k: int = 10,
+    overrides: dict[str, Any] | None = None,
+    allowed_categories: list[str] | None = None,
 ) -> dict[str, Any]:
+    """overrides — фильтры, выставленные пользователем в UI явно;
+    имеют приоритет над распознанными из текста вопроса.
+    allowed_categories — ограничение роли (RBAC): None = без ограничений."""
     filters: dict[str, Any] = {"query": question}
     if llm is not None:
         filters = parse_question(llm, question)
+    if overrides:
+        filters.update(overrides)
+
+    # сущности графа, распознанные в вопросе, — графовый источник кандидатов
+    entities = resolve_question_entities(session, f"{question} {filters['query']}")
+    if entities:
+        filters["entities"] = [e["name"] for e in entities]
+
+    # числовые ограничения из вопроса — поиск по измерениям графа
+    measure_ids = measurement_candidates(session, filters.get("constraints") or [])
 
     hits = hybrid_search(
         session,
@@ -84,6 +116,9 @@ def answer_question(
         language=filters.get("language"),
         year_from=filters.get("year_from"),
         year_to=filters.get("year_to"),
+        entity_keys=[e["key"] for e in entities] or None,
+        measure_chunk_ids=measure_ids or None,
+        allowed_categories=allowed_categories,
     )
     attach_doc_entities(session, hits)
 

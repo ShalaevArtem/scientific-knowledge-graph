@@ -149,16 +149,29 @@ SET rp.source = row.source, rp.unit = row.unit_ref, rp.confidence = row.confiden
 MERGE (ms)-[:OF_PROPERTY]->(p)
 """
 
+# Версионирование фактов: повторное извлечение (новая модель, обновлённый документ)
+# не затирает вывод молча — прежнее состояние архивируется в ConclusionVersion,
+# у актуального узла растёт version и обновляется updated_at.
 MERGE_DOC_CONCLUSIONS = """
 UNWIND $rows AS row
 MATCH (d:Document {id: row.doc_id})
 MERGE (c:Conclusion {id: row.id})
-SET c.text = row.text, c.confidence = row.confidence, c.geography = row.geography,
+ON CREATE SET c.text = row.text, c.confidence = row.confidence, c.geography = row.geography,
     c.date = CASE WHEN row.year IS NULL THEN NULL ELSE date({year: row.year, month: 1, day: 1}) END,
-    c.needs_review = row.needs_review
+    c.needs_review = row.needs_review, c.version = 1, c.updated_at = row.now
 MERGE (c)-[di:DESCRIBED_IN]->(d)
 SET di.fragment = row.fragment, di.source = row.source, di.confidence = row.confidence,
     di.extracted_at = row.now, di.model = row.model
+WITH c, row
+WHERE c.text <> row.text OR c.confidence <> row.confidence
+   OR coalesce(c.geography, '') <> coalesce(row.geography, '')
+CREATE (v:ConclusionVersion {conclusion_id: c.id, version: coalesce(c.version, 1),
+    text: c.text, confidence: c.confidence, geography: c.geography,
+    archived_at: row.now, archived_by_model: row.model})
+MERGE (c)-[:HAD_VERSION]->(v)
+SET c.text = row.text, c.confidence = row.confidence, c.geography = row.geography,
+    c.needs_review = row.needs_review,
+    c.version = coalesce(c.version, 1) + 1, c.updated_at = row.now
 """
 
 MERGE_EXTRACTED_AUTHORS = """
@@ -188,11 +201,16 @@ def extract_chunks(
     category: str | None = None,
     workers: int = 1,
     min_confidence_review: float = 0.6,
+    force: bool = False,
 ) -> LoadReport:
     """Извлекает из чанков без метки processed, пишет факты в граф.
 
     LLM-вызовы идут параллельно (workers), разбор и запись — последовательно:
     нормализатор мутирует словарь соответствий и не потокобезопасен.
+
+    force=True — повторная обработка уже извлечённых чанков (новая модель или
+    обновлённый источник): изменившиеся выводы получают новую версию, прежнее
+    состояние архивируется (см. MERGE_DOC_CONCLUSIONS).
     """
     report = LoadReport(source=f"extract:{llm.model}")
     normalizer = Normalizer(session)
@@ -202,10 +220,11 @@ def extract_chunks(
         where += " AND c.doc_id = $doc_id"
     if category:
         where += " AND d.category = $category"
+    freshness = "true" if force else "c.extracted_at IS NULL"
     chunks = session.run(
         f"""
         MATCH (d:Document)-[:HAS_CHUNK]->(c:Chunk)
-        WHERE c.extracted_at IS NULL {where}
+        WHERE {freshness} {where}
         RETURN c.id AS id, c.text AS text, c.unit_kind AS unit_kind, c.unit_no AS unit_no,
                d.id AS doc_id, d.title AS title, d.category AS category, d.year AS year
         ORDER BY d.id, c.seq LIMIT $limit

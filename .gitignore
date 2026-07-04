@@ -225,3 +225,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# журнал аудита RBAC
+logs/
+
+# локальная конфигурация Claude Code
+.claude/

@@ -88,7 +88,7 @@ def cmd_extract(args: argparse.Namespace) -> int:
     with session_scope() as session:
         report = extract_chunks(
             session, llm, limit=args.limit, doc_id=args.doc,
-            category=args.category, workers=args.workers,
+            category=args.category, workers=args.workers, force=args.force,
         )
     print(report.render())
     return 1 if report.rejected else 0
@@ -202,6 +202,9 @@ def main(argv: list[str] | None = None) -> int:
     p_extract.add_argument("--doc", default=None, help="только один документ (id)")
     p_extract.add_argument("--category", default=None, help="только одна категория")
     p_extract.add_argument("--workers", type=int, default=1, help="параллельные LLM-вызовы")
+    p_extract.add_argument("--force", action="store_true",
+                           help="повторно обработать уже извлечённые чанки; "
+                                "изменившиеся выводы версионируются")
     p_extract.set_defaults(func=cmd_extract)
 
     p_wipe = sub.add_parser("wipe", help="полная очистка графа (данные, не схема)")
