@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -234,7 +235,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p_serve = sub.add_parser("serve", help="запустить веб-интерфейс")
     p_serve.add_argument("--host", default="127.0.0.1")
-    p_serve.add_argument("--port", type=int, default=8000)
+    p_serve.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")))
     p_serve.set_defaults(func=cmd_serve)
 
     sub.add_parser("stats", help="счётчики узлов и связей").set_defaults(func=cmd_stats)
