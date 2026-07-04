@@ -228,6 +228,9 @@ __marimo__/
 
 # журнал аудита RBAC
 logs/
+<<<<<<< HEAD
 
 # локальная конфигурация Claude Code
 .claude/
+=======
+>>>>>>> c2488a8ec35983879d5c79bc0c9cb923a4881a7f

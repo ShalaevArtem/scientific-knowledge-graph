@@ -201,6 +201,7 @@ def extract_chunks(
     workers: int = 1,
     min_confidence_review: float = 0.6,
     force: bool = False,
+    chunk_ids: list[str] | None = None,
 ) -> LoadReport:
     """Извлекает из чанков без метки processed, пишет факты в граф.
 
@@ -210,11 +211,17 @@ def extract_chunks(
     force=True — повторная обработка уже извлечённых чанков (новая модель или
     обновлённый источник): изменившиеся выводы получают новую версию, прежнее
     состояние архивируется (см. MERGE_DOC_CONCLUSIONS).
+
+    chunk_ids — явный список id для обработки (вместо отбора по freshness/фильтрам);
+    используется драйвером выборочного извлечения (stride по документам). Уже
+    извлечённые id всё равно отсеиваются, если не force.
     """
     report = LoadReport(source=f"extract:{llm.model}")
     normalizer = Normalizer(session)
 
     where = ""
+    if chunk_ids is not None:
+        where += " AND c.id IN $chunk_ids"
     if doc_id:
         where += " AND c.doc_id = $doc_id"
     if category:
@@ -231,6 +238,7 @@ def extract_chunks(
         limit=limit,
         doc_id=doc_id,
         category=category,
+        chunk_ids=chunk_ids,
     ).data()
 
     def _call(chunk: dict) -> tuple[dict, ChunkExtraction | Exception]:

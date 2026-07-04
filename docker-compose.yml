@@ -33,7 +33,9 @@ services:
       - neo4j_logs:/logs
       - ./infra/neo4j-dump:/dump   # дамп для восстановления (см. infra/neo4j-dump/README.md)
     healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u $${NEO4J_USER:-neo4j} -p $${NEO4J_PASSWORD} 'RETURN 1' || exit 1"]
+      # значения подставляет compose из корневого .env (одинарный $), т.к. внутри
+      # контейнера neo4j переменной NEO4J_PASSWORD нет — есть только NEO4J_AUTH
+      test: ["CMD-SHELL", "cypher-shell -u ${NEO4J_USER:-neo4j} -p '${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env}' 'RETURN 1' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
