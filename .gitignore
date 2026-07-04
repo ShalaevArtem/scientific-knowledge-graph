@@ -228,6 +228,3 @@ __marimo__/
 
 # журнал аудита RBAC
 logs/
-
-# локальная конфигурация Claude Code
-.claude/
