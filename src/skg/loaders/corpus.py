@@ -35,7 +35,12 @@ MERGE_CHUNKS = """
 UNWIND $rows AS row
 MATCH (d:Document {id: row.doc_id})
 MERGE (c:Chunk {id: row.id})
-SET c.seq = row.seq, c.unit_no = row.unit_no, c.unit_kind = row.unit_kind,
+// при повторной загрузке (напр. с OCR) нумерация юнитов может сдвинуться и текст
+// чанка измениться — тогда старый эмбеддинг устарел; обнуляем, чтобы skg embed
+// пересчитал его. Неизменные чанки сохраняют эмбеддинг. Порядок важен: сравнение
+// читает прежний c.text до его перезаписи ниже.
+SET c.embedding = CASE WHEN c.text = row.text THEN c.embedding ELSE null END,
+    c.seq = row.seq, c.unit_no = row.unit_no, c.unit_kind = row.unit_kind,
     c.text = row.text, c.doc_id = row.doc_id
 MERGE (d)-[:HAS_CHUNK]->(c)
 """
