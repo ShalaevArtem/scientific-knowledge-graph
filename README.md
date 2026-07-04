@@ -75,7 +75,7 @@ Copy-Item .env.example .env               # заполнить NEO4J_PASSWORD (�
 powershell -File infra\neo4j-local\install.ps1
 .neo4j\neo4j-community-2026.05.0\bin\neo4j.bat console    # в отдельном окне
 
-python -m venv .venv
+py -m venv .venv
 .venv\Scripts\pip install -e .
 
 .venv\Scripts\skg schema                  # ограничения и индексы
@@ -104,12 +104,20 @@ Invoke-WebRequest -Uri $dl.href -OutFile "data\local\case-corpus.zip"
 .venv\Scripts\python infra\unpack_corpus.py data\local\case-corpus.zip data\local\corpus
 ```
 
-Настройка LLM в `.env` (любой Anthropic- или OpenAI-совместимый API):
+Настройка LLM в `.env` (Anthropic, Yandex AI Studio или OpenAI-совместимый API):
 ```
-LLM_PROVIDER=anthropic            # или openai (openrouter, deepseek, vsegpt…)
+LLM_PROVIDER=anthropic            # или openai (openrouter, deepseek, vsegpt…), или yandex
 LLM_MODEL=claude-haiku-4-5-20251001
 LLM_API_KEY=sk-...
 # LLM_BASE_URL=https://…          # для совместимых провайдеров
+```
+Для Yandex AI Studio — два равнозначных способа: OpenAI-совместимый эндпоинт
+(см. .env.example) либо нативный провайдер:
+```
+LLM_PROVIDER=yandex
+LLM_MODEL=yandexgpt-lite/latest
+LLM_API_KEY=...
+LLM_FOLDER_ID=...
 ```
 Без ключа работают: ingest, embed, гибридный поиск, граф, статистика.
 С ключом добавляются: извлечение сущностей/выводов, разбор вопроса в фильтры, сводка с цитатами.

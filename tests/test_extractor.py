@@ -7,6 +7,9 @@
 
 from __future__ import annotations
 
+import os
+
+from neo4j.exceptions import Neo4jError, ServiceUnavailable
 import pytest
 
 from skg.db import session_scope
@@ -54,16 +57,21 @@ class FakeLLM:
 
 @pytest.fixture()
 def graph_session():
+    if not os.environ.get("NEO4J_PASSWORD"):
+        pytest.skip("интеграционный тест требует NEO4J_PASSWORD и запущенный Neo4j")
     with session_scope() as session:
-        session.run(
-            "MERGE (d:Document {id: $id}) "
-            "SET d.title = 'Тестовый документ', d.category = 'статья', d.year = 2025 "
-            "MERGE (c:Chunk {id: $cid}) "
-            "SET c.text = 'тестовый текст', c.unit_kind = 'page', c.unit_no = 1, "
-            "    c.seq = 1, c.doc_id = $id, c.extracted_at = NULL "
-            "MERGE (d)-[:HAS_CHUNK]->(c)",
-            id=DOC_ID, cid=CHUNK_ID,
-        )
+        try:
+            session.run(
+                "MERGE (d:Document {id: $id}) "
+                "SET d.title = 'Тестовый документ', d.category = 'статья', d.year = 2025 "
+                "MERGE (c:Chunk {id: $cid}) "
+                "SET c.text = 'тестовый текст', c.unit_kind = 'page', c.unit_no = 1, "
+                "    c.seq = 1, c.doc_id = $id, c.extracted_at = NULL "
+                "MERGE (d)-[:HAS_CHUNK]->(c)",
+                id=DOC_ID, cid=CHUNK_ID,
+            )
+        except (Neo4jError, ServiceUnavailable) as exc:
+            pytest.skip(f"интеграционный тест требует доступный Neo4j: {exc}")
         yield session
         # подчистка: тестовые документ/чанк/выводы/измерения и осиротевшие needs_review-сущности
         session.run(
