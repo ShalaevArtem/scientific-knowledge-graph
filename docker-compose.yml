@@ -1,6 +1,24 @@
-# Развёртывание Neo4j для сервера/CI. Для локальной разработки без Docker
-# используйте infra/neo4j-local/install.ps1 (Windows, zip-дистрибутив).
+# Полный стек: Neo4j + приложение (веб-UI/слой запросов).
+#   docker compose up -d --build
+# Требуется .env в корне (NEO4J_PASSWORD и LLM_* — см. .env.example).
+# База поднимается пустой: инициализация — schema/seed/данные (см. README).
 services:
+  app:
+    build: .
+    image: skg-app:latest          # тег для публикации в реестр (GHCR/Docker Hub)
+    depends_on:
+      neo4j:
+        condition: service_healthy  # стартуем только после готовности БД
+    env_file:
+      - .env                        # LLM_*, AUTH_TOKENS, NEO4J_USER/PASSWORD/DATABASE
+    environment:
+      # внутри compose Neo4j доступен по имени сервиса, а не localhost из .env
+      NEO4J_URI: bolt://neo4j:7687
+      PORT: "8000"
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    restart: unless-stopped
+
   neo4j:
     image: neo4j:2026.05.0-community
     ports:
