@@ -1,0 +1,21 @@
+# Корпус (~10 ГБ) и локальные артефакты — не тащим в образ
+data/local/
+.cache/
+.venv/
+.git/
+logs/
+docs/
+tests/
+
+# Секреты — ключи НЕ должны попадать в образ (передаются env-переменными)
+.env
+.envrc
+
+# Python-мусор
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
