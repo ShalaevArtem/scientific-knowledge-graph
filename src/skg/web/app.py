@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from neo4j import Driver
 
@@ -17,6 +17,7 @@ from ..db import create_driver
 from ..extract.llm import LLMClient, LLMError, get_llm
 from ..query.answer import answer_question
 from ..query.search import attach_doc_entities, hybrid_search
+from .auth import User, audit_log, get_user, read_audit
 
 app = FastAPI(title="Научный клубок — карта знаний R&D")
 STATIC = Path(__file__).parent / "static"
@@ -58,10 +59,52 @@ def health():
     return {"neo4j": True, "llm": llm() is not None}
 
 
+@app.get("/api/whoami")
+def api_whoami(user: User = Depends(get_user)):
+    allowed = user.allowed_categories()
+    return {
+        "name": user.name, "role": user.role, "role_label": user.role_label,
+        "restricted": allowed is not None, "allowed_categories": allowed,
+        "can_view_audit": user.can_view_audit,
+    }
+
+
+@app.get("/api/audit")
+def api_audit(limit: int = 200, user: User = Depends(get_user)):
+    if not user.can_view_audit:
+        raise HTTPException(403, "аудит доступен только администратору")
+    return {"records": read_audit(limit)}
+
+
+def _check_category(user: User, category: str | None) -> None:
+    allowed = user.allowed_categories()
+    if category and allowed is not None and category not in allowed:
+        raise HTTPException(403, f"категория «{category}» недоступна роли «{user.role_label}»")
+
+
 @app.get("/api/answer")
-def api_answer(q: str, k: int = 10):
+def api_answer(
+    q: str,
+    k: int = 10,
+    category: str | None = None,
+    language: str | None = None,
+    year_from: int | None = Query(None),
+    year_to: int | None = Query(None),
+    user: User = Depends(get_user),
+):
+    _check_category(user, category)
+    overrides = {
+        "category": category, "language": language,
+        "year_from": year_from, "year_to": year_to,
+    }
     with _session() as s:
-        return answer_question(s, q, llm=llm(), k=k)
+        result = answer_question(
+            s, q, llm=llm(), k=k,
+            overrides={k_: v for k_, v in overrides.items() if v is not None},
+            allowed_categories=user.allowed_categories(),
+        )
+    audit_log(user, "answer", q=q, hits=len(result.get("citations") or []))
+    return result
 
 
 @app.get("/api/search")
@@ -72,13 +115,17 @@ def api_search(
     language: str | None = None,
     year_from: int | None = Query(None),
     year_to: int | None = Query(None),
+    user: User = Depends(get_user),
 ):
+    _check_category(user, category)
     with _session() as s:
         hits = hybrid_search(
             s, q, k=k, category=category, language=language,
             year_from=year_from, year_to=year_to,
+            allowed_categories=user.allowed_categories(),
         )
         attach_doc_entities(s, hits)
+    audit_log(user, "search", q=q, hits=len(hits))
     return {"hits": hits}
 
 
@@ -103,7 +150,7 @@ def api_stats():
 
 
 ENTITY_CARD = """
-MATCH (e:{label}) WHERE coalesce(e.id, e.name) = $key
+MATCH (e:{label}) WHERE e.id = $key OR e.name = $key
 OPTIONAL MATCH (d:Document)-[m:MENTIONS]->(e)
 WITH e, d, m ORDER BY m.count DESC
 WITH e, collect({{id: d.id, title: d.title, category: d.category, year: d.year,
@@ -138,12 +185,14 @@ ORDER BY n.seq
 
 
 @app.get("/api/context")
-def api_context(chunk_id: str):
+def api_context(chunk_id: str, user: User = Depends(get_user)):
     """Фрагмент ± два соседних: прочитать цитату в её окружении."""
     with _session() as s:
         rows = s.run(CHUNK_CONTEXT, chunk_id=chunk_id).data()
     if not rows:
         raise HTTPException(404, "чанк не найден")
+    _check_category(user, rows[0]["category"])
+    audit_log(user, "view_context", chunk_id=chunk_id, doc=rows[0]["title"])
     return {
         "title": rows[0]["title"],
         "rel_path": rows[0]["rel_path"],
@@ -151,6 +200,30 @@ def api_context(chunk_id: str):
         "chunks": rows,
         "focus": chunk_id,
     }
+
+
+CONCLUSION_HISTORY = """
+MATCH (c:Conclusion {id: $cid})
+OPTIONAL MATCH (c)-[:HAD_VERSION]->(v:ConclusionVersion)
+WITH c, v ORDER BY v.version
+RETURN c.id AS id, c.text AS text, c.confidence AS confidence, c.geography AS geography,
+       coalesce(c.version, 1) AS version, c.updated_at AS updated_at,
+       c.needs_review AS needs_review,
+       [x IN collect(CASE WHEN v IS NULL THEN NULL ELSE
+          {version: v.version, text: v.text, confidence: v.confidence,
+           geography: v.geography, archived_at: v.archived_at,
+           archived_by_model: v.archived_by_model} END) WHERE x IS NOT NULL] AS history
+"""
+
+
+@app.get("/api/conclusion/history")
+def api_conclusion_history(id: str):
+    """История версий вывода: актуальное состояние + архив изменений."""
+    with _session() as s:
+        rec = s.run(CONCLUSION_HISTORY, cid=id).single()
+    if rec is None:
+        raise HTTPException(404, "вывод не найден")
+    return rec.data()
 
 
 GRAPH_AROUND_DOC = """
@@ -163,7 +236,7 @@ RETURN d, collect(DISTINCT {entity: e, mentions: m.count}) AS ents,
 """
 
 GRAPH_AROUND_ENTITY = """
-MATCH (e:{label}) WHERE coalesce(e.id, e.name) = $key
+MATCH (e:{label}) WHERE e.id = $key OR e.name = $key
 MATCH (d:Document)-[m:MENTIONS]->(e)
 WITH e, d, m ORDER BY m.count DESC LIMIT 15
 OPTIONAL MATCH (d)-[m2:MENTIONS]->(other)
@@ -186,14 +259,19 @@ def _node_payload(node) -> dict:
 
 
 @app.get("/api/graph")
-def api_graph(doc_id: str | None = None, label: str | None = None, key: str | None = None):
+def api_graph(
+    doc_id: str | None = None, label: str | None = None, key: str | None = None,
+    user: User = Depends(get_user),
+):
     nodes: dict[str, dict] = {}
     edges: list[dict] = []
+    audit_log(user, "view_graph", doc_id=doc_id, entity=key)
     with _session() as s:
         if doc_id:
             rec = s.run(GRAPH_AROUND_DOC, doc_id=doc_id).single()
             if rec is None:
                 raise HTTPException(404, "документ не найден")
+            _check_category(user, dict(rec["d"]).get("category"))
             d = _node_payload(rec["d"])
             nodes[d["id"]] = d
             for item in rec["ents"]:
@@ -215,7 +293,10 @@ def api_graph(doc_id: str | None = None, label: str | None = None, key: str | No
                 raise HTTPException(404, "сущность не найдена")
             e = _node_payload(rec["e"])
             nodes[e["id"]] = e
+            allowed = user.allowed_categories()
             for item in rec["neighborhood"]:
+                if allowed is not None and dict(item["doc"]).get("category") not in allowed:
+                    continue  # документы закрытых категорий не показываем внешним
                 d = _node_payload(item["doc"])
                 nodes[d["id"]] = d
                 edges.append({"from": d["id"], "to": e["id"], "type": "MENTIONS", "weight": 1})
@@ -265,10 +346,10 @@ def api_gaps(top_materials: int = 20, top_processes: int = 20):
 
 
 @app.get("/api/experts")
-def api_experts(topic: str):
+def api_experts(topic: str, user: User = Depends(get_user)):
     """Носители экспертизы: авторы документов, релевантных теме."""
     with _session() as s:
-        hits = hybrid_search(s, topic, k=25)
+        hits = hybrid_search(s, topic, k=25, allowed_categories=user.allowed_categories())
         doc_ids = sorted({h["doc_id"] for h in hits})
         rows = s.run(
             """
