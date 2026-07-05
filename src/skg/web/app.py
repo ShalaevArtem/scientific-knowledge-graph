@@ -8,9 +8,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from datetime import datetime, timezone
+
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from neo4j import Driver
+from pydantic import BaseModel
 
 from ..config import get_settings
 from ..db import create_driver
@@ -66,6 +69,8 @@ def api_whoami(user: User = Depends(get_user)):
         "name": user.name, "role": user.role, "role_label": user.role_label,
         "restricted": allowed is not None, "allowed_categories": allowed,
         "can_view_audit": user.can_view_audit,
+        "can_edit_graph": user.can_edit_graph,
+        "can_view_dashboard": user.can_view_dashboard,
     }
 
 
@@ -157,6 +162,101 @@ def api_review(limit: int = Query(50, ge=1, le=200), user: User = Depends(get_us
         ).data()
     audit_log(user, "view_review", count=len(rows))
     return {"items": rows}
+
+
+# --- Ручная корректировка графа экспертом (write) ---------------------------
+# Очередь needs_review только читалась; здесь эксперт действует над узлом:
+# подтверждает, правит, комментирует или удаляет ошибочное извлечение. Каждое
+# действие фиксирует автора и дату — на самом узле (reviewed_by/at) и в аудите.
+
+REVIEWABLE_LABELS = {
+    "Material", "Process", "Equipment", "Facility",
+    "Conclusion", "Person", "Property", "TopicTag",
+}
+
+
+class ReviewAction(BaseModel):
+    label: str
+    key: str
+    name: str | None = None       # правка отображаемого имени сущности
+    text: str | None = None       # правка текста вывода
+    geography: str | None = None  # правка географии вывода
+    synonyms: list[str] | None = None  # правка синонимов сущности
+    note: str | None = None       # комментарий эксперта
+
+
+def _require_editor(user: User) -> None:
+    if not user.can_edit_graph:
+        raise HTTPException(403, f"корректировка графа недоступна роли «{user.role_label}»")
+
+
+def _node_match(label: str) -> str:
+    if label not in REVIEWABLE_LABELS:
+        raise HTTPException(400, "неизвестный тип сущности")
+    # ключ узла: id (сущности/вывод) либо name (Facility/Property/TopicTag)
+    return f"MATCH (n:{label}) WHERE n.id = $key OR n.name = $key"
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+@app.post("/api/review/{op}")
+def api_review_action(op: str, action: ReviewAction, user: User = Depends(get_user)):
+    """op = approve | edit | comment | reject. Эксперт подтверждает, правит,
+    комментирует или удаляет узел из очереди needs_review."""
+    _require_editor(user)
+    if op not in {"approve", "edit", "comment", "reject"}:
+        raise HTTPException(400, "op должен быть approve|edit|comment|reject")
+    match = _node_match(action.label)
+    now = _now_iso()
+    params: dict = {"key": action.key, "by": user.name, "now": now}
+
+    if op == "reject":
+        # ошибочное извлечение (галлюцинация модели) — удаляем узел со связями
+        query = (
+            match
+            + " WITH n, coalesce(n.name, n.text, n.id) AS name DETACH DELETE n RETURN name"
+        )
+    elif op == "comment":
+        if not (action.note or "").strip():
+            raise HTTPException(400, "пустой комментарий")
+        params["note"] = f"{user.name} ({now}): {action.note.strip()}"
+        query = (
+            match
+            + " SET n.review_notes = coalesce(n.review_notes, []) + [$note]"
+            + " RETURN coalesce(n.name, n.text, n.id) AS name"
+        )
+    else:  # approve | edit
+        sets = [
+            "n.needs_review = false",
+            f"n.review_status = '{op}'",
+            "n.reviewed_by = $by",
+            "n.reviewed_at = $now",
+        ]
+        if op == "edit":
+            if action.label == "Conclusion":
+                if action.text is not None and action.text.strip():
+                    sets.append("n.text = $text")
+                    params["text"] = action.text.strip()
+                if action.geography is not None:
+                    sets.append("n.geography = $geo")
+                    params["geo"] = action.geography.strip() or None
+            else:
+                if action.name is not None and action.name.strip():
+                    sets.append("n.name = $name")
+                    params["name"] = action.name.strip()
+                if action.synonyms is not None:
+                    sets.append("n.synonyms = $syn")
+                    params["syn"] = [s.strip() for s in action.synonyms if s.strip()]
+        query = match + " SET " + ", ".join(sets) + " RETURN coalesce(n.name, n.text, n.id) AS name"
+
+    with _session() as s:
+        rec = s.run(query, **params).single()
+    if rec is None:
+        raise HTTPException(404, "узел не найден (возможно, уже удалён)")
+    audit_log(user, f"review_{op}", label=action.label, key=action.key, name=rec["name"])
+    return {"ok": True, "op": op, "label": action.label, "key": action.key, "name": rec["name"]}
 
 
 @app.get("/api/stats")
@@ -379,6 +479,90 @@ def api_gaps(top_materials: int = 20, top_processes: int = 20):
         {"material": m, "cells": [cells.get((m, p), 0) for p in processes]} for m in materials
     ]
     return {"processes": processes, "matrix": matrix}
+
+
+# --- Дашборд руководителя ---------------------------------------------------
+# Агрегирует уже существующие данные графа в срез для принятия решений:
+# покрытие знаний по направлениям, зоны риска (слабо освещённые пары и очередь
+# на проверку), носители экспертизы, прогресс верификации.
+
+DASH_TOTALS = """
+MATCH (d:Document) WITH count(d) AS documents
+OPTIONAL MATCH (c:Conclusion) WITH documents, count(c) AS conclusions
+OPTIONAL MATCH (ms:Measurement) WITH documents, conclusions, count(ms) AS measurements
+OPTIONAL MATCH (e) WHERE e:Material OR e:Process OR e:Equipment OR e:Facility
+WITH documents, conclusions, measurements, count(e) AS entities
+OPTIONAL MATCH (nr) WHERE nr.needs_review = true
+WITH documents, conclusions, measurements, entities, count(nr) AS needs_review
+OPTIONAL MATCH (rv) WHERE rv.reviewed_at IS NOT NULL
+RETURN documents, conclusions, measurements, entities, needs_review,
+       count(rv) AS reviewed
+"""
+
+# Считаем выводы/измерения по документу ДО следующего расширения — иначе
+# conclusions × measurements каждого документа даёт декартово произведение
+# (десятки тысяч строк на документ) и запрос деградирует до десятков секунд.
+DASH_COVERAGE = """
+MATCH (t:TopicTag)<-[:TAGGED]-(d:Document)
+OPTIONAL MATCH (d)<-[:DESCRIBED_IN]-(c:Conclusion)
+WITH t, d, count(DISTINCT c) AS dc
+OPTIONAL MATCH (d)-[:REPORTS]->(ms:Measurement)
+WITH t, d, dc, count(DISTINCT ms) AS dm
+RETURN t.name AS topic, count(DISTINCT d) AS docs,
+       sum(dc) AS conclusions, sum(dm) AS measurements
+ORDER BY docs DESC
+LIMIT 20
+"""
+
+# зоны риска: пары «материал × процесс», освещённые слабо (1–3 документа) —
+# кандидаты на НИР или дополнительный сбор источников (в отличие от нулевых
+# «неизученных», их видно на вкладке «Пробелы»)
+DASH_RISK_PAIRS = """
+MATCH (d:Document)-[:MENTIONS]->(m:Material)
+WHERE m.needs_review IS NULL OR m.needs_review = false
+MATCH (d)-[:MENTIONS]->(p:Process)
+WHERE p.needs_review IS NULL OR p.needs_review = false
+WITH m.name AS material, p.name AS process, count(DISTINCT d) AS docs
+WHERE docs <= 3
+RETURN material, process, docs
+ORDER BY docs ASC, material
+LIMIT 24
+"""
+
+DASH_REVIEW_BY_LABEL = """
+MATCH (n) WHERE n.needs_review = true
+RETURN labels(n)[0] AS label, count(*) AS n
+ORDER BY n DESC
+"""
+
+DASH_EXPERTS = """
+MATCH (d:Document)-[:AUTHORED_BY]->(p:Person)
+RETURN p.name AS name, count(DISTINCT d) AS docs
+ORDER BY docs DESC
+LIMIT 12
+"""
+
+
+@app.get("/api/dashboard")
+def api_dashboard(user: User = Depends(get_user)):
+    """Сводка для руководителя: покрытие по направлениям, зоны риска, эксперты,
+    прогресс верификации. Недоступна внешним партнёрам."""
+    if not user.can_view_dashboard:
+        raise HTTPException(403, f"дашборд недоступен роли «{user.role_label}»")
+    with _session() as s:
+        totals = s.run(DASH_TOTALS).single()
+        coverage = s.run(DASH_COVERAGE).data()
+        risk_pairs = s.run(DASH_RISK_PAIRS).data()
+        review_by_label = s.run(DASH_REVIEW_BY_LABEL).data()
+        experts = s.run(DASH_EXPERTS).data()
+    audit_log(user, "view_dashboard")
+    return {
+        "totals": totals.data() if totals else {},
+        "coverage": coverage,
+        "risk_pairs": risk_pairs,
+        "review_by_label": review_by_label,
+        "experts": experts,
+    }
 
 
 @app.get("/api/experts")

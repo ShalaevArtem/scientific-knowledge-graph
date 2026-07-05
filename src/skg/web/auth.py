@@ -60,6 +60,18 @@ class User:
     def can_view_audit(self) -> bool:
         return self.role == "admin"
 
+    @property
+    def can_edit_graph(self) -> bool:
+        """Ручная корректировка графа (подтверждение/правка/удаление сущностей и
+        выводов из очереди needs_review). Доступна всем внутренним ролям; внешний
+        партнёр — только чтение."""
+        return self.role != "external"
+
+    @property
+    def can_view_dashboard(self) -> bool:
+        """Дашборд руководителя (покрытие по направлениям, зоны риска). Внутренние роли."""
+        return self.role != "external"
+
 
 def parse_tokens(raw: str) -> dict[str, User]:
     if not raw.strip():
