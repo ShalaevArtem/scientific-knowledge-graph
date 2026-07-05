@@ -228,10 +228,11 @@
   #answerBox {
     position: relative;
     background: var(--panel); border: 1px solid var(--border); border-radius: 15px;
-    padding: 20px 24px 20px 28px; margin-bottom: 18px; white-space: pre-wrap;
+    padding: 20px 24px 20px 28px; margin-bottom: 18px;
     backdrop-filter: blur(10px); animation: rise .35s ease both;
-    font-size: 14.5px;
+    font-size: 14.5px; line-height: 1.62;
   }
+  #answerBox.empty { white-space: pre-wrap; }
   #answerBox::before {
     content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3.5px;
     border-radius: 4px; background: linear-gradient(180deg, var(--accent), var(--violet));
@@ -244,6 +245,56 @@
     border-bottom: 1px dashed transparent; transition: border-color .15s;
   }
   .cite:hover { border-bottom-color: var(--accent); }
+
+  /* ---------- markdown-ответ ---------- */
+  .ans-lead { margin: 0 0 4px; font-size: 15px; color: var(--text); }
+  #answerBox p { margin: 0 0 10px; }
+  #answerBox p:last-child { margin-bottom: 0; }
+  #answerBox strong { color: var(--text); font-weight: 700; }
+  .ans-h {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); margin: 18px 0 9px;
+  }
+  .ans-h::before {
+    content: ""; width: 4px; height: 13px; border-radius: 2px;
+    background: linear-gradient(180deg, var(--accent), var(--violet));
+  }
+  .ans-list { margin: 4px 0 12px; padding: 0; list-style: none; }
+  .ans-list.last { margin-bottom: 0; }
+  ol.ans-list { counter-reset: ans; }
+  ol.ans-list > li { position: relative; padding-left: 32px; margin: 8px 0; counter-increment: ans; }
+  ol.ans-list > li::before {
+    content: counter(ans); position: absolute; left: 0; top: 0;
+    width: 21px; height: 21px; border-radius: 7px;
+    background: var(--chip-bg); border: 1px solid var(--border-soft); color: var(--accent);
+    font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 700;
+    display: grid; place-items: center;
+  }
+  ul.ans-list > li { position: relative; padding-left: 18px; margin: 6px 0; }
+  ul.ans-list > li::before {
+    content: ""; position: absolute; left: 3px; top: 9px; width: 5px; height: 5px;
+    border-radius: 50%; background: var(--accent);
+  }
+
+  /* ---------- распознанные фильтры ---------- */
+  .ansfilters {
+    display: flex; flex-wrap: wrap; gap: 7px; align-items: center;
+    margin-top: 16px; padding-top: 13px; border-top: 1px dashed var(--border-soft);
+  }
+  .ansfilters .afl {
+    color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .09em; margin-right: 2px;
+  }
+  .fchip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--chip-bg); border: 1px solid var(--border-soft); color: var(--text);
+    padding: 3px 12px; border-radius: 999px; font-size: 12px;
+  }
+  .fchip i { color: var(--faint); font-style: normal; font-size: 11px; }
+  .fchip.num { border-color: rgba(255, 180, 84, .3); background: rgba(255, 180, 84, .08); }
+  .fchip.num i { color: var(--accent2); }
+  .fchip.num b { font-family: "JetBrains Mono", monospace; font-weight: 600; }
+  .fchip.ent { border-color: rgba(90, 167, 255, .28); }
 
   /* skeleton-загрузка */
   .skel { border-radius: 8px; height: 14px; margin: 10px 0; position: relative; overflow: hidden; background: var(--panel2); }
@@ -739,17 +790,85 @@ function renderAnswer(data) {
   const box = $('answerBox');
   if (data.answer) {
     box.className = '';
-    box.innerHTML = esc(data.answer).replace(/\[(\d+)\]/g,
-      (m, n) => `<span class="cite" onclick="scrollToHit(${n})">[${n}]</span>`);
+    box.innerHTML = renderMarkdown(data.answer);
+    if (data.filters && Object.keys(data.filters).length > 1) {
+      box.insertAdjacentHTML('beforeend', renderFilters(data.filters));
+    }
   } else {
     box.className = 'empty';
     box.textContent = data.citations?.length
       ? 'LLM-ключ не задан — показаны найденные фрагменты без сводки (задайте LLM_API_KEY в .env).'
       : 'Ничего не найдено. Убедитесь, что корпус загружен (skg ingest) и посчитаны эмбеддинги (skg embed).';
   }
-  if (data.filters && Object.keys(data.filters).length > 1) {
-    box.innerHTML += `<div class="meta" style="margin-top:10px">распознанные фильтры: <span class="mono">${esc(JSON.stringify(data.filters))}</span></div>`;
+}
+
+/* лёгкий markdown → HTML: жирный, цитаты [n], нумерованные/маркированные списки,
+   заголовки-разделы (**Детали:** / ### …). Текст экранируется до вставки. */
+function inlineMd(s) {
+  return esc(s)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\[(\d+)\]/g, (m, n) => `<span class="cite" onclick="scrollToHit(${n})">[${n}]</span>`);
+}
+
+function renderMarkdown(raw) {
+  const lines = (raw || '').replace(/\r/g, '').split('\n');
+  let html = '', listTag = null, items = [], firstBlock = true;
+  const flush = () => {
+    if (!listTag) return;
+    html += `<${listTag} class="ans-list">` + items.map(li => `<li>${li}</li>`).join('') + `</${listTag}>`;
+    listTag = null; items = [];
+  };
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t) { flush(); continue; }
+    let m;
+    if ((m = t.match(/^(\d+)[.)]\s+(.*)$/))) {
+      if (listTag && listTag !== 'ol') flush();
+      listTag = 'ol'; items.push(inlineMd(m[2])); firstBlock = false; continue;
+    }
+    if ((m = t.match(/^[-*•]\s+(.*)$/))) {
+      if (listTag && listTag !== 'ul') flush();
+      listTag = 'ul'; items.push(inlineMd(m[1])); firstBlock = false; continue;
+    }
+    flush();
+    if ((m = t.match(/^\*\*(.+?)\*\*:?\s*$/)) || (m = t.match(/^#{1,4}\s+(.*?):?\s*$/))) {
+      html += `<div class="ans-h">${inlineMd(m[1].replace(/:$/, ''))}</div>`; firstBlock = false; continue;
+    }
+    html += `<p class="${firstBlock ? 'ans-lead' : ''}">${inlineMd(t)}</p>`;
+    firstBlock = false;
   }
+  flush();
+  // последний список не должен тянуть нижний отступ
+  return html.replace(/<(ol|ul) class="ans-list">(?![\s\S]*<(?:ol|ul) class="ans-list">)/,
+    '<$1 class="ans-list last">');
+}
+
+/* распознанные фильтры → чипы вместо сырого JSON */
+const _LANG_RU = {ru: 'русский', en: 'английский'};
+const _OP_SYM = {'<=': '≤', '>=': '≥', '<': '<', '>': '>', '=': '='};
+
+function fchip(label, val, cls = '') {
+  return `<span class="fchip ${cls}"><i>${esc(label)}</i>${val}</span>`;
+}
+
+function fmtConstraint(c) {
+  const unit = c.unit ? ' ' + esc(c.unit) : '';
+  const v = c.op === 'range'
+    ? `${esc(c.value)}–${esc(c.value_max ?? '')}`
+    : `${_OP_SYM[c.op] || esc(c.op || '')} ${esc(c.value)}`;
+  return `<b>${v.trim()}${unit}</b>`;
+}
+
+function renderFilters(f) {
+  const chips = [];
+  if (f.year_from || f.year_to) chips.push(fchip('период', `${esc(f.year_from ?? '…')}–${esc(f.year_to ?? '…')}`));
+  if (f.category) chips.push(fchip('категория', esc(f.category)));
+  if (f.language) chips.push(fchip('язык', esc(_LANG_RU[f.language] || f.language)));
+  if (f.geography) chips.push(fchip('география', esc(f.geography)));
+  for (const c of (f.constraints || [])) chips.push(fchip(esc(c.property), fmtConstraint(c), 'num'));
+  for (const e of (f.entities || [])) chips.push(`<span class="fchip ent">${esc(e)}</span>`);
+  if (!chips.length) return '';
+  return `<div class="ansfilters"><span class="afl">Распознано</span>${chips.join('')}</div>`;
 }
 
 const LBL_COLORS = {Document: '#5aa7ff', Material: '#5fd68b', Process: '#ffb454',
